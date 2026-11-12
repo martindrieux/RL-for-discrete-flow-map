@@ -39,6 +39,7 @@ def evaluate_conditional(fm, ref, task, reward_mod, cfg: RLConfig, evalset: dict
         for dec, y in (("sample", sample_tokens(logits, cfg.temp, g)), ("argmax", logits.argmax(-1))):
             s = task.decode(torch.cat([q, y], 1).cpu())
             m[f"{dec}_{name}_correct"] = reward_mod.correct(s).float().mean().item()
+            m[f"{dec}_{name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
         if name == "train":
             m["entropy"] = token_entropy(logits, cfg.temp).mean().item()
             m["kl_ref"] = token_kl(logits, logits_ref, cfg.temp).sum(-1).mean().item()

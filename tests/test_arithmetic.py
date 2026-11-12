@@ -90,3 +90,24 @@ def test_cli_float_override():
     with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
         yaml.safe_dump({"train": {"lr": 0.1}}, f)
     assert load_config([f.name, "train.lr=1e-5"])["train"]["lr"] == 1e-5
+
+
+def test_many_digits_hashed_holdout():
+    from rlfm.rewards.arithmetic import parse
+    for n in (4, 8):
+        task = ArithmeticTask(n_digits=n, frac_correct=1.0, holdout_frac=0.1, holdout_seed=0)
+        assert task.seq_len == 3 * n + 3
+        s = task.decode(task.sample(4000, torch.Generator().manual_seed(1)))
+        assert all(parse(x) is not None and parse(x)[0] + parse(x)[1] == parse(x)[2] for x in s)
+        assert not any(task.is_heldout(*parse(x)[:2]) for x in s)
+        q = task.sample_questions(500, heldout=True, generator=torch.Generator().manual_seed(2))
+        assert all(task.is_heldout(int("".join(map(str, r[:n].tolist()))), int("".join(map(str, r[n + 1:2 * n + 1].tolist()))))
+                   for r in q)
+        a = torch.randint(0, 10**n, (200_000,)); b = torch.randint(0, 10**n, (200_000,))
+        assert abs(task.held_out(a, b).float().mean().item() - 0.1) < 0.005
+
+
+def test_true_answer():
+    task = ArithmeticTask(n_digits=8, holdout_frac=0.1)
+    q = task.question_tokens(torch.tensor([99999999, 12345678]), torch.tensor([1, 87654321]))
+    assert task.decode(task.true_answer(q)) == ["100000000", "099999999"]

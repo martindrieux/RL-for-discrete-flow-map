@@ -102,7 +102,7 @@ def task_metrics(task, reward_mod, y: torch.Tensor, prefix: str) -> dict:
     m = {f"{prefix}wellformed": reward_mod.well_formed(s).float().mean().item(),
          f"{prefix}correct": reward_mod.correct(s).float().mean().item(),
          f"{prefix}distinct_correct": reward_mod.distinct_correct(s)}
-    if getattr(task, "heldout_mask", None) is not None and task.heldout_mask.any():
+    if getattr(task, "holdout_frac", 0) > 0:
         parsed = [reward_mod.parse(x) for x in s]
         held = [p for p in parsed if p is not None and task.is_heldout(p[0], p[1])]
         m[f"{prefix}heldout_share"] = len(held) / len(s)       # share of samples whose operands are held out
@@ -136,5 +136,6 @@ def eval_conditional(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed:
             y = sample(fm, z, K, q).argmax(-1)
             s = task.decode(torch.cat([q, y], 1).cpu())
             out[f"K{K}_{split_name}_correct"] = reward_mod.correct(s).float().mean().item()
+            out[f"K{K}_{split_name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
             out[f"K{K}_{split_name}_wellformed"] = reward_mod.well_formed(s).float().mean().item()
     return out

@@ -156,6 +156,22 @@
    "kind": "curve",
    "metric": "argmax_heldout_correct",
    "better": "higher"
+  },
+  {
+   "title": "Answer digits right, held-out questions, 1 jump",
+   "label": "Digit accuracy, held-out, $K = 1$",
+   "shows": "fraction of the $n + 1$ answer digits equal to the digits of $a + b$, over 1000 held-out questions, argmax, $K = 1$",
+   "kind": "curve",
+   "metric": "K1_heldout_digit_acc",
+   "better": "higher"
+  },
+  {
+   "title": "Answer digits right (RL), held-out questions",
+   "label": "Digit accuracy, held-out, sampled",
+   "shows": "fraction of answer digits equal to those of $a + b$, sampled answers to 1000 held-out questions",
+   "kind": "curve",
+   "metric": "sample_heldout_digit_acc",
+   "better": "higher"
   }
  ],
  "glossary": {
@@ -168,7 +184,7 @@
    "out_dir": "output folder",
    "init": "pretrained checkpoint the policy starts from",
    "task.name": "dataset",
-   "task.n_digits": "$n$: digits per operand in $ab+cd=efg$",
+   "task.n_digits": "$n$: digits per operand; the answer has $n + 1$ digits",
    "task.frac_correct": "$q$: fraction of pretraining equations with the right sum",
    "model.dim": "$d$: transformer width",
    "model.depth": "number of transformer blocks",

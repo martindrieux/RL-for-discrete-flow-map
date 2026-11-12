@@ -16,16 +16,53 @@ class ArithmeticTask:
 
         A held-out pair (a, b) never appears in training data, with any sum.
         """
+        assert n_digits <= 9, "operands must fit the integer hash below"
         self.n_digits = n_digits
         self.frac_correct = frac_correct
+        self.holdout_frac, self.holdout_seed = holdout_frac, holdout_seed
         self.vocab_size = len(CHARS)
         self.seq_len = 3 * n_digits + 3
         hi = 10**n_digits
-        perm = torch.randperm(hi * hi, generator=torch.Generator().manual_seed(holdout_seed))
-        n_out = int(round(holdout_frac * hi * hi))
-        self.heldout_mask = torch.zeros(hi * hi, dtype=torch.bool)
-        self.heldout_mask[perm[:n_out]] = True
-        self.train_pairs = (~self.heldout_mask).nonzero().squeeze(1)
+        # Up to 3 digits: an explicit list of held-out pairs (exactly holdout_frac of all pairs).
+        # From 4 digits: a pair is held out when a fixed hash of (a, b) falls below holdout_frac.
+        self.hashed = n_digits >= 4
+        if self.hashed:
+            self.heldout_mask, self.train_pairs = None, None
+        else:
+            perm = torch.randperm(hi * hi, generator=torch.Generator().manual_seed(holdout_seed))
+            n_out = int(round(holdout_frac * hi * hi))
+            self.heldout_mask = torch.zeros(hi * hi, dtype=torch.bool)
+            self.heldout_mask[perm[:n_out]] = True
+            self.train_pairs = (~self.heldout_mask).nonzero().squeeze(1)
+
+    def held_out(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """BoolTensor [B]: whether each operand pair is held out of training."""
+        if not self.hashed:
+            return self.heldout_mask[a * 10**self.n_digits + b]
+        M = 2_147_483_647
+        h = ((a % M) * 48271 + (b % M) * 69621 + self.holdout_seed * 40692 + 12345) % M
+        h = (h * 16807 + 2_654_435) % M
+        h = (h * 48271 + (h >> 7)) % M
+        return (h % 100_000).float() < self.holdout_frac * 100_000
+
+    def _pairs(self, batch_size: int, heldout: bool, generator: torch.Generator | None) -> tuple[torch.Tensor, torch.Tensor]:
+        """Operand pairs drawn uniformly from the training pairs (heldout=False) or the held-out pairs."""
+        hi = 10**self.n_digits
+        if not self.hashed:
+            pool = self.heldout_mask.nonzero().squeeze(1) if heldout else self.train_pairs
+            if len(pool) == 0:
+                raise ValueError("no held-out pairs: set holdout_frac > 0")
+            pair = pool[torch.randint(0, len(pool), (batch_size,), generator=generator)]
+            return pair // hi, pair % hi
+        if heldout and self.holdout_frac <= 0:
+            raise ValueError("no held-out pairs: set holdout_frac > 0")
+        a_out, b_out, have = [], [], 0
+        while have < batch_size:  # rejection sampling
+            a = torch.randint(0, hi, (2 * batch_size + 64,), generator=generator)
+            b = torch.randint(0, hi, (2 * batch_size + 64,), generator=generator)
+            keep = self.held_out(a, b) == heldout
+            a_out.append(a[keep]); b_out.append(b[keep]); have += int(keep.sum())
+        return torch.cat(a_out)[:batch_size], torch.cat(b_out)[:batch_size]
 
     @property
     def prompt_len(self) -> int:
@@ -42,16 +79,19 @@ class ArithmeticTask:
     def sample_questions(self, batch_size: int, heldout: bool = False,
                          generator: torch.Generator | None = None) -> torch.Tensor:
         """Questions [B, prompt_len] with operand pairs drawn uniformly from the training or the held-out pairs."""
-        pool = self.heldout_mask.nonzero().squeeze(1) if heldout else self.train_pairs
-        if len(pool) == 0:
-            raise ValueError("no held-out pairs: set holdout_frac > 0")
-        pair = pool[torch.randint(0, len(pool), (batch_size,), generator=generator)]
-        hi = 10**self.n_digits
-        return self.question_tokens(pair // hi, pair % hi)
+        a, b = self._pairs(batch_size, heldout, generator)
+        return self.question_tokens(a, b)
+
+    def true_answer(self, q: torch.Tensor) -> torch.Tensor:
+        """Correct answer ids [B, n_digits + 1] for questions q [B, prompt_len]."""
+        n = self.n_digits
+        w = 10 ** torch.arange(n - 1, -1, -1, device=q.device)
+        a, b = (q[:, :n] * w).sum(1), (q[:, n + 1:2 * n + 1] * w).sum(1)
+        return self._digits(a + b, n + 1)
 
     def is_heldout(self, a: int, b: int) -> bool:
         """Whether the operand pair (a, b) is held out of training."""
-        return bool(self.heldout_mask[a * 10**self.n_digits + b])
+        return bool(self.held_out(torch.tensor([a]), torch.tensor([b]))[0])
 
     def encode(self, s: str) -> torch.Tensor:
         """Convert a string of length L into a LongTensor of token ids [L]."""
@@ -72,8 +112,7 @@ class ArithmeticTask:
     def sample(self, batch_size: int, generator: torch.Generator | None = None) -> torch.Tensor:
         """Draw a batch [B, L] of equations, a fraction `frac_correct` of which are correct."""
         n, hi = self.n_digits, 10**self.n_digits
-        pair = self.train_pairs[torch.randint(0, len(self.train_pairs), (batch_size,), generator=generator)]
-        a, b = pair // hi, pair % hi
+        a, b = self._pairs(batch_size, False, generator)
         true = a + b
         # Uniform over [0, 2*hi - 1) minus {true}: draw in [0, 2*hi - 2) and skip over `true`.
         r = torch.randint(0, 2 * hi - 2, (batch_size,), generator=generator)
