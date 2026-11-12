@@ -10,12 +10,26 @@ PLUS, EQ = STOI["+"], STOI["="]
 class ArithmeticTask:
     """Generator of `a+b=c` strings, a mix of correct and incorrect sums."""
 
-    def __init__(self, n_digits: int = 2, frac_correct: float = 0.5) -> None:
-        """Store the digit count and fraction of correct equations."""
+    def __init__(self, n_digits: int = 2, frac_correct: float = 0.5, holdout_frac: float = 0.0,
+                 holdout_seed: int = 0) -> None:
+        """Store the digit count and fraction of correct equations; hold out a fraction of operand pairs.
+
+        A held-out pair (a, b) never appears in training data, with any sum.
+        """
         self.n_digits = n_digits
         self.frac_correct = frac_correct
         self.vocab_size = len(CHARS)
         self.seq_len = 3 * n_digits + 3
+        hi = 10**n_digits
+        perm = torch.randperm(hi * hi, generator=torch.Generator().manual_seed(holdout_seed))
+        n_out = int(round(holdout_frac * hi * hi))
+        self.heldout_mask = torch.zeros(hi * hi, dtype=torch.bool)
+        self.heldout_mask[perm[:n_out]] = True
+        self.train_pairs = (~self.heldout_mask).nonzero().squeeze(1)
+
+    def is_heldout(self, a: int, b: int) -> bool:
+        """Whether the operand pair (a, b) is held out of training."""
+        return bool(self.heldout_mask[a * 10**self.n_digits + b])
 
     def encode(self, s: str) -> torch.Tensor:
         """Convert a string of length L into a LongTensor of token ids [L]."""
@@ -36,8 +50,8 @@ class ArithmeticTask:
     def sample(self, batch_size: int, generator: torch.Generator | None = None) -> torch.Tensor:
         """Draw a batch [B, L] of equations, a fraction `frac_correct` of which are correct."""
         n, hi = self.n_digits, 10**self.n_digits
-        a = torch.randint(0, hi, (batch_size,), generator=generator)
-        b = torch.randint(0, hi, (batch_size,), generator=generator)
+        pair = self.train_pairs[torch.randint(0, len(self.train_pairs), (batch_size,), generator=generator)]
+        a, b = pair // hi, pair % hi
         true = a + b
         # Uniform over [0, 2*hi - 1) minus {true}: draw in [0, 2*hi - 2) and skip over `true`.
         r = torch.randint(0, 2 * hi - 2, (batch_size,), generator=generator)

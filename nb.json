@@ -108,6 +108,22 @@
    "kind": "curve",
    "metric": "reward_train",
    "better": "higher"
+  },
+  {
+   "title": "Held-out correct, 1 jump (pretraining)",
+   "label": "Correct on held-out pairs, $K = 1$",
+   "shows": "among argmax samples ($K = 1$) whose operands $(a,b)$ were held out of pretraining, fraction with $a + b = c$",
+   "kind": "curve",
+   "metric": "K1_heldout_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Held-out correct, sampled",
+   "label": "Correct on held-out pairs, sampled",
+   "shows": "among the 1000 sampled $y_n$ whose operands were held out of pretraining, fraction with $a + b = c$",
+   "kind": "curve",
+   "metric": "sample_heldout_correct",
+   "better": "higher"
   }
  ],
  "glossary": {
@@ -153,7 +169,9 @@
    "track.title": "tracker title",
    "track.formula": "tracker formula",
    "track.algo": "tracker algorithm",
-   "track.question": "tracker question"
+   "track.question": "tracker question",
+   "task.holdout_frac": "fraction of operand pairs $(a,b)$ never shown in pretraining (with any sum)",
+   "task.holdout_seed": "seed choosing the held-out pairs"
   },
   "symbols": {
    "\\eta": "learning rate",

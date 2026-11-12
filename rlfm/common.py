@@ -24,13 +24,21 @@ def load_config(argv: list[str] | None = None) -> dict:
         *path, last = key.split(".")
         for p in path:
             node = node.setdefault(p, {})
-        node[last] = yaml.safe_load(val)
+        v = yaml.safe_load(val)
+        if isinstance(v, str):
+            try:
+                v = float(v)  # YAML 1.1 reads "1e-5" as a string
+            except ValueError:
+                pass
+        node[last] = v
     return cfg
 
 
 def make_task(cfg: dict):
     if cfg["task"]["name"] == "arithmetic":
-        task = ArithmeticTask(n_digits=cfg["task"].get("n_digits", 2), frac_correct=cfg["task"].get("frac_correct", 0.5))
+        tc = cfg["task"]
+        task = ArithmeticTask(n_digits=tc.get("n_digits", 2), frac_correct=tc.get("frac_correct", 0.5),
+                              holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0))
         return task, arith_reward
     raise ValueError(cfg["task"]["name"])
 
@@ -69,9 +77,16 @@ def one_hot(y: torch.Tensor, V: int) -> torch.Tensor:
 def task_metrics(task, reward_mod, y: torch.Tensor, prefix: str) -> dict:
     """Fraction well formed, fraction correct, number of distinct correct strings."""
     s = task.decode(y.cpu())
-    return {f"{prefix}wellformed": reward_mod.well_formed(s).float().mean().item(),
-            f"{prefix}correct": reward_mod.correct(s).float().mean().item(),
-            f"{prefix}distinct_correct": reward_mod.distinct_correct(s)}
+    m = {f"{prefix}wellformed": reward_mod.well_formed(s).float().mean().item(),
+         f"{prefix}correct": reward_mod.correct(s).float().mean().item(),
+         f"{prefix}distinct_correct": reward_mod.distinct_correct(s)}
+    if getattr(task, "heldout_mask", None) is not None and task.heldout_mask.any():
+        parsed = [reward_mod.parse(x) for x in s]
+        held = [p for p in parsed if p is not None and task.is_heldout(p[0], p[1])]
+        m[f"{prefix}heldout_share"] = len(held) / len(s)       # share of samples whose operands are held out
+        if held:
+            m[f"{prefix}heldout_correct"] = sum(p[0] + p[1] == p[2] for p in held) / len(held)
+    return m
 
 
 @torch.no_grad()

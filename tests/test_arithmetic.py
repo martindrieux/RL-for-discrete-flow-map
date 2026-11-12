@@ -74,3 +74,19 @@ def test_one_digit():
     strings = task.decode(x)
     assert well_formed(strings).all()
     assert abs(reward(strings).mean().item() - 0.5) < 0.02
+
+
+def test_holdout_pairs_never_sampled():
+    from rlfm.rewards.arithmetic import parse
+    task = ArithmeticTask(n_digits=2, frac_correct=1.0, holdout_frac=0.1, holdout_seed=0)
+    assert int(task.heldout_mask.sum()) == 1000
+    s = task.decode(task.sample(20000, torch.Generator().manual_seed(0)))
+    assert not any(task.is_heldout(*parse(x)[:2]) for x in s)
+
+
+def test_cli_float_override():
+    import tempfile, yaml
+    from rlfm.common import load_config
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump({"train": {"lr": 0.1}}, f)
+    assert load_config([f.name, "train.lr=1e-5"])["train"]["lr"] == 1e-5

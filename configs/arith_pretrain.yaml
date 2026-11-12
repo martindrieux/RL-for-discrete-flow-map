@@ -1,7 +1,7 @@
 # Pretraining on 2-digit arithmetic: half the equations have the right sum.
 seed: 0
 out_dir: runs/arith_pretrain
-task: {name: arithmetic, n_digits: 2, frac_correct: 0.5}
+task: {name: arithmetic, n_digits: 2, frac_correct: 0.5, holdout_frac: 0.1, holdout_seed: 0}
 model: {dim: 128, depth: 4, heads: 4, time_warp: true}
 train:
   steps: 20000
