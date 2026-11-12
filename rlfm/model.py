@@ -87,3 +87,55 @@ class DiT(nn.Module):
             h = blk(h, c)
         sh, sc = self.ada(c)[:, None, :].chunk(2, dim=-1)
         return self.out(self.norm(h) * (1 + sc) + sh)
+
+
+class CondDiT(nn.Module):
+    """Conditional logits network: forward(x [B,La,V], tau_s, tau_t, q [B,Lq]) -> logits [B,La,V] for the answer.
+
+    mode "state":   the question enters as clean one-hot rows, cat(onehot(q), x), through the same input map x E.
+    mode "encoder": the question is read by a separate encoder (token embedding + `enc_depth` blocks); its
+                    features are prepended to the answer tokens in the main network.
+    In both modes a learned segment embedding marks positions as given (question) or to generate (answer).
+    """
+
+    def __init__(self, vocab_size: int, prompt_len: int, answer_len: int, mode: str = "state", d: int = 128,
+                 depth: int = 4, heads: int = 4, enc_depth: int = 2):
+        super().__init__()
+        assert mode in ("state", "encoder")
+        self.mode, self.vocab_size, self.prompt_len, self.answer_len = mode, vocab_size, prompt_len, answer_len
+        self.inp = nn.Linear(vocab_size, d, bias=False)
+        self.segment = nn.Embedding(2, d)  # 0 = given (question), 1 = to generate (answer)
+        if mode == "encoder":
+            self.tok = nn.Embedding(vocab_size, d)
+            self.enc = nn.ModuleList([Block(d, heads) for _ in range(enc_depth)])
+            for blk in self.enc:  # the encoder is not time-modulated: identity AdaLN, unit gates
+                nn.init.zeros_(blk.ada[1].weight)
+                with torch.no_grad():
+                    blk.ada[1].bias.zero_()
+                    blk.ada[1].bias[2 * d:3 * d] = 1.0
+                    blk.ada[1].bias[5 * d:6 * d] = 1.0
+        self.emb_s, self.emb_t = TimeMLP(d), TimeMLP(d)
+        self.blocks = nn.ModuleList([Block(d, heads) for _ in range(depth)])
+        self.norm = nn.LayerNorm(d, elementwise_affine=False)
+        self.ada = nn.Sequential(nn.SiLU(), nn.Linear(d, 2 * d))
+        self.out = nn.Linear(d, vocab_size)
+        for m in (self.ada[1], self.out):
+            nn.init.zeros_(m.weight)
+            nn.init.zeros_(m.bias)
+
+    def forward(self, x: torch.Tensor, tau_s: torch.Tensor, tau_t: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+        B, Lq, La = x.shape[0], q.shape[1], x.shape[1]
+        c = self.emb_s(tau_s) + self.emb_t(tau_t)
+        if self.mode == "state":
+            hq = self.inp(F.one_hot(q, self.vocab_size).to(x.dtype))
+        else:
+            hq = self.tok(q)
+            zero = torch.zeros(B, hq.shape[-1], device=x.device, dtype=hq.dtype)
+            for blk in self.enc:
+                hq = blk(hq, zero)
+        seg = torch.cat([torch.zeros(Lq, dtype=torch.long), torch.ones(La, dtype=torch.long)]).to(x.device)
+        h = torch.cat([hq, self.inp(x)], dim=1) + self.segment(seg)[None]
+        for blk in self.blocks:
+            h = blk(h, c)
+        sh, sc = self.ada(c)[:, None, :].chunk(2, dim=-1)
+        return self.out(self.norm(h) * (1 + sc) + sh)[:, Lq:]

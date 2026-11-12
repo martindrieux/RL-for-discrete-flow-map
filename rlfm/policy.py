@@ -12,8 +12,9 @@ from .tracking import nb
 
 
 @nb.core
-def policy_logits(fm: FlowMap, z: torch.Tensor, K: int, option: str = "A", tau_star: float = 0.9) -> torch.Tensor:
-    """Logits l(z) in R^{B x L x V}, differentiable in the network weights."""
+def policy_logits(fm: FlowMap, z: torch.Tensor, K: int, option: str = "A", tau_star: float = 0.9,
+                  q: torch.Tensor | None = None) -> torch.Tensor:
+    """Logits l(z, q) in R^{B x L x V} (answer positions only when a question q is given), differentiable."""
     B = z.shape[0]
     if option == "A":
         g, n_jumps = grid(fm, K, device=z.device), K - 1
@@ -24,10 +25,10 @@ def policy_logits(fm: FlowMap, z: torch.Tensor, K: int, option: str = "A", tau_s
     x = z
     for k in range(n_jumps):
         s, t = g[k].expand(B), g[k + 1].expand(B)
-        x = jump(x, s, t, fm.delta(x, s, t))
+        x = jump(x, s, t, fm.delta(x, s, t, q))
     if option == "A":
-        return fm.logits(x, g[K - 1].expand(B), g[K].expand(B)).float()
-    return fm.logits(x, g[K].expand(B), g[K].expand(B)).float()
+        return fm.logits(x, g[K - 1].expand(B), g[K].expand(B), q).float()
+    return fm.logits(x, g[K].expand(B), g[K].expand(B), q).float()
 
 
 def token_logp(logits: torch.Tensor, y: torch.Tensor, temp: float) -> torch.Tensor:

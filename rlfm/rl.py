@@ -33,18 +33,26 @@ class Rollout:
     logp_old: torch.Tensor   # [N, L] per-token old log-probabilities
     reward: torch.Tensor     # [N]
     logits_ref: torch.Tensor | None  # [N, L, V] reference-policy logits from the same z
+    q: torch.Tensor | None = None    # [N, Lq] question of each sample (shared within a group), or None
 
 
 @torch.no_grad()
-def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable[[torch.Tensor], torch.Tensor], cfg: RLConfig,
-            L: int, V: int, device, gen: torch.Generator | None = None) -> Rollout:
-    """Draw B groups of G pairs (z, y) from the current policy and score them."""
+def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable, cfg: RLConfig,
+            L: int, V: int, device, gen: torch.Generator | None = None,
+            question_fn: Callable[[int], torch.Tensor] | None = None) -> Rollout:
+    """Draw B groups of G pairs (z, y) from the current policy and score them.
+
+    Conditional: question_fn(B) gives B questions [B, Lq]; each is shared by the G samples of its group,
+    L is then the answer length and reward_fn(y, q) scores the answer to the question.
+    """
     N = cfg.groups * cfg.group_size
+    q = None if question_fn is None else question_fn(cfg.groups).to(device).repeat_interleave(cfg.group_size, 0)
     z = torch.randn(N, L, V, generator=gen, device=device)
-    logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star)
+    logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q)
     y = sample_tokens(logits, cfg.temp, gen)
-    logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star) if (ref is not None and cfg.beta > 0) else None
-    return Rollout(z, y, token_logp(logits, y, cfg.temp), reward_fn(y).to(device).float(), logits_ref)
+    logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star, q) if (ref is not None and cfg.beta > 0) else None
+    r = reward_fn(y) if q is None else reward_fn(y, q)
+    return Rollout(z, y, token_logp(logits, y, cfg.temp), r.to(device).float(), logits_ref, q)
 
 
 @nb.core
@@ -74,7 +82,7 @@ def rl_update(fm: FlowMap, opt: torch.optim.Optimizer, ro: Rollout, cfg: RLConfi
     """mu gradient steps on one rollout; returns diagnostics of the last step."""
     A = advantages(ro.reward, cfg.group_size, cfg.advantage)
     for _ in range(cfg.mu):
-        logits = policy_logits(fm, ro.z, cfg.K, cfg.option, cfg.tau_star)
+        logits = policy_logits(fm, ro.z, cfg.K, cfg.option, cfg.tau_star, ro.q)
         logp = token_logp(logits, ro.y, cfg.temp)
         loss = pg_loss(logp, ro.logp_old, A, cfg.clip)
         kl = token_kl(logits, ro.logits_ref, cfg.temp).mean() if ro.logits_ref is not None else torch.zeros((), device=logits.device)

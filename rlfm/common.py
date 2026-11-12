@@ -8,7 +8,7 @@ import yaml
 
 from .data.arithmetic import ArithmeticTask
 from .flowmap import FlowMap, sample
-from .model import DiT
+from .model import CondDiT, DiT
 from .rewards import arithmetic as arith_reward
 from .timewarp import TimeWarp
 
@@ -50,17 +50,32 @@ def require_holdout(cfg: dict, allow: bool, what: str) -> None:
                          "Pass allow_no_holdout=true only for debugging.")
 
 
-def make_flowmap(cfg: dict, V: int, L: int) -> FlowMap:
-    m = cfg["model"]
-    net = DiT(V, L, d=m["dim"], depth=m["depth"], heads=m["heads"])
+def cond_mode(cfg: dict) -> str:
+    """'none' (unconditional), 'state' (question as clean one-hot rows) or 'encoder' (separate encoder)."""
+    return cfg.get("cond", {}).get("mode", "none")
+
+
+def make_flowmap(cfg: dict, V: int, L: int, task=None) -> FlowMap:
+    m, mode = cfg["model"], cond_mode(cfg)
+    if mode == "none":
+        net = DiT(V, L, d=m["dim"], depth=m["depth"], heads=m["heads"])
+    else:
+        Lq = task.prompt_len
+        net = CondDiT(V, Lq, L - Lq, mode=mode, d=m["dim"], depth=m["depth"], heads=m["heads"],
+                      enc_depth=cfg["cond"].get("enc_depth", 2))
     return FlowMap(net, TimeWarp(V, identity=not m.get("time_warp", True)))
+
+
+def split(ids: torch.Tensor, task) -> tuple[torch.Tensor, torch.Tensor]:
+    """Full equations [B, L] -> (question [B, Lq], answer [B, La])."""
+    return ids[:, :task.prompt_len], ids[:, task.prompt_len:]
 
 
 def load_flowmap(path: str, device) -> tuple[FlowMap, dict]:
     """Loads the EMA weights of a pretraining checkpoint."""
     ck = torch.load(path, map_location=device, weights_only=False)
     task, _ = make_task(ck["cfg"])
-    fm = make_flowmap(ck["cfg"], task.vocab_size, task.seq_len).to(device)
+    fm = make_flowmap(ck["cfg"], task.vocab_size, task.seq_len, task).to(device)
     fm.load_state_dict(ck["ema"])
     return fm, ck["cfg"]
 
@@ -105,4 +120,21 @@ def eval_sampler(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed: int
     for K in Ks:
         y = sample(fm, z, K).argmax(-1)
         out.update(task_metrics(task, reward_mod, y, f"K{K}_"))
+    return out
+
+
+@torch.no_grad()
+def eval_conditional(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed: int, device) -> dict:
+    """Argmax answers to n training questions and n held-out questions, from fixed noises."""
+    g = torch.Generator().manual_seed(seed)
+    out = {}
+    for split_name, held in (("train", False), ("heldout", True)):
+        q = task.sample_questions(n, heldout=held, generator=g).to(device)
+        La = task.seq_len - task.prompt_len
+        z = torch.randn(n, La, task.vocab_size, generator=g).to(device)
+        for K in Ks:
+            y = sample(fm, z, K, q).argmax(-1)
+            s = task.decode(torch.cat([q, y], 1).cpu())
+            out[f"K{K}_{split_name}_correct"] = reward_mod.correct(s).float().mean().item()
+            out[f"K{K}_{split_name}_wellformed"] = reward_mod.well_formed(s).float().mean().item()
     return out

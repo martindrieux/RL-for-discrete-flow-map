@@ -7,7 +7,8 @@ import time
 
 import torch
 
-from rlfm.common import EMA, eval_sampler, load_config, make_flowmap, make_task, one_hot, require_holdout
+from rlfm.common import (EMA, cond_mode, eval_conditional, eval_sampler, load_config, make_flowmap, make_task, one_hot,
+                         require_holdout, split)
 from rlfm.flowmap import pretrain_loss
 from rlfm.tracking import Run
 
@@ -19,7 +20,8 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     task, reward_mod = make_task(cfg)
     V, L = task.vocab_size, task.seq_len
-    fm = make_flowmap(cfg, V, L).to(device)
+    fm = make_flowmap(cfg, V, L, task).to(device)
+    conditional = cond_mode(cfg) != "none"
     tr = cfg["train"]
     opt = torch.optim.AdamW(fm.net.parameters(), lr=tr["lr"], weight_decay=tr.get("weight_decay", 0.0))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda k: min(1.0, (k + 1) / tr["warmup"]))
@@ -32,8 +34,12 @@ def main():
     print(f"params: {sum(p.numel() for p in fm.net.parameters()) / 1e6:.2f}M  V={V} L={L}  device={device}", flush=True)
     t0, best = time.time(), -1.0
     for step in range(1, tr["steps"] + 1):
-        x1 = one_hot(task.sample(tr["batch_size"]).to(device), V)
-        losses = pretrain_loss(fm, x1)
+        ids = task.sample(tr["batch_size"]).to(device)
+        if conditional:
+            q, ans = split(ids, task)
+            losses = pretrain_loss(fm, one_hot(ans, V), q=q)
+        else:
+            losses = pretrain_loss(fm, one_hot(ids, V))
         opt.zero_grad(set_to_none=True)
         losses["loss"].backward()
         gn = torch.nn.utils.clip_grad_norm_(fm.net.parameters(), tr.get("grad_clip", 1.0))
@@ -44,12 +50,14 @@ def main():
             run.log(step, loss=losses["loss"].item(), loss_diag=losses["loss_diag"].item(),
                     loss_off=losses["loss_off"].item(), grad_norm=gn.item(), sec=time.time() - t0)
         if step % tr["eval_every"] == 0 or step == tr["steps"]:
-            m = eval_sampler(ema.model, task, reward_mod, cfg["eval"]["Ks"], cfg["eval"]["n"], cfg["eval"]["seed"], device)
+            ev = (eval_conditional if conditional else eval_sampler)
+            m = ev(ema.model, task, reward_mod, cfg["eval"]["Ks"], cfg["eval"]["n"], cfg["eval"]["seed"], device)
             run.log(step, **m)
             ck = {"cfg": cfg, "step": step, "ema": ema.model.state_dict(), "model": fm.state_dict()}
             torch.save(ck, os.path.join(out, "last.pt"))
-            if m["K1_wellformed"] > best:
-                best = m["K1_wellformed"]
+            score = m["K1_train_correct"] if conditional else m["K1_wellformed"]
+            if score > best:
+                best = score
                 torch.save(ck, os.path.join(out, "best.pt"))
     run.finish(**m)
 

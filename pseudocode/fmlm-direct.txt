@@ -22,3 +22,11 @@ $x_0 = z \sim \mathcal{N}(0, I)$, $t_k = t(k/K)$
 for $k = 0, \dots, K-1$:
     $x_{k+1} = \frac{1-t_{k+1}}{1-t_k} x_k + \frac{t_{k+1}-t_k}{1-t_k}\hat\delta_{t_k,t_{k+1}}(x_k)$
 return $y_i = \arg\max_v x_K[i, v]$
+
+== Conditioning on a question (when `cond.mode` is not none)
+input: question tokens $c$ = `ab+cd=`, answer one-hot $x_1 \in \{0,1\}^{3 \times V}$
+the state, the noise and both losses cover the answer rows only: $I_t = (1-t)x_0 + t x_1$, $x_0 \sim \mathcal{N}(0, I_{3 \times V})$
+network input by the rule `cond.mode`:
+    state: $h = [\mathrm{onehot}(c) E ; I_t E] + e_{seg}$   // question as clean one-hot rows, same input map $E$
+    encoder: $h = [\mathrm{Enc}(c) ; I_t E] + e_{seg}$, $\mathrm{Enc}$ = token embedding + `cond.enc_depth` blocks
+$\hat\delta_{s,t}(x \mid c)$ = softmax of the outputs at the answer positions   // $e_{seg}$: learned given / to-generate embedding

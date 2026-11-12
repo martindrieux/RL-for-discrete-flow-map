@@ -27,6 +27,28 @@ class ArithmeticTask:
         self.heldout_mask[perm[:n_out]] = True
         self.train_pairs = (~self.heldout_mask).nonzero().squeeze(1)
 
+    @property
+    def prompt_len(self) -> int:
+        """Length of the question `ab+cd=`; the answer is the last n_digits + 1 tokens."""
+        return 2 * self.n_digits + 2
+
+    def question_tokens(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """Question ids [B, prompt_len] for operand tensors a, b [B]."""
+        n, B = self.n_digits, a.shape[0]
+        plus = torch.full((B, 1), PLUS, dtype=torch.long)
+        eq = torch.full((B, 1), EQ, dtype=torch.long)
+        return torch.cat([self._digits(a, n), plus, self._digits(b, n), eq], dim=1)
+
+    def sample_questions(self, batch_size: int, heldout: bool = False,
+                         generator: torch.Generator | None = None) -> torch.Tensor:
+        """Questions [B, prompt_len] with operand pairs drawn uniformly from the training or the held-out pairs."""
+        pool = self.heldout_mask.nonzero().squeeze(1) if heldout else self.train_pairs
+        if len(pool) == 0:
+            raise ValueError("no held-out pairs: set holdout_frac > 0")
+        pair = pool[torch.randint(0, len(pool), (batch_size,), generator=generator)]
+        hi = 10**self.n_digits
+        return self.question_tokens(pair // hi, pair % hi)
+
     def is_heldout(self, a: int, b: int) -> bool:
         """Whether the operand pair (a, b) is held out of training."""
         return bool(self.heldout_mask[a * 10**self.n_digits + b])

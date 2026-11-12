@@ -105,3 +105,32 @@ def test_rl_update_runs_with_clip_and_kl():
     opt = torch.optim.SGD(fm.parameters(), lr=1e-3)
     d = rl_update(fm, opt, ro, cfg)
     assert all(map(lambda v: v == v, d.values()))
+
+
+def test_conditional_modes_pretrain_policy_and_rl():
+    from rlfm.common import make_flowmap, make_task, one_hot, split
+    for mode in ("state", "encoder"):
+        cfg = {"task": {"name": "arithmetic", "frac_correct": 1.0, "holdout_frac": 0.1},
+               "cond": {"mode": mode, "enc_depth": 1}, "model": {"dim": 32, "depth": 1, "heads": 2}}
+        task, rm = make_task(cfg)
+        fm = make_flowmap(cfg, task.vocab_size, task.seq_len, task)
+        q, ans = split(task.sample(8), task)
+        out = pretrain_loss(fm, one_hot(ans, 12), q=q)
+        out["loss"].backward()
+        assert torch.isfinite(out["loss"])
+        z = torch.randn(8, 3, 12)
+        assert sample(fm, z, 2, q).shape == (8, 3, 12)
+        assert policy_logits(fm, z, 1, "A", 0.9, q).shape == (8, 3, 12)
+        # changing the question changes the output: the network reads it (output layer starts at zero)
+        for mod in fm.net.modules():  # blocks start as the identity (zero gates); perturb them
+            if isinstance(mod, torch.nn.Linear) and mod.out_features in (12, 6 * 32, 2 * 32):
+                torch.nn.init.normal_(mod.weight, std=0.1)
+        q2 = task.sample_questions(8)
+        assert not torch.allclose(fm.logits(z, torch.zeros(8), torch.ones(8), q),
+                                  fm.logits(z, torch.zeros(8), torch.ones(8), q2))
+        from rlfm.rl import collect, rl_update
+        cfg_rl = RLConfig(groups=2, group_size=4)
+        ro = collect(fm, None, lambda y, qq: rm.reward(task.decode(torch.cat([qq, y], 1))), cfg_rl, 3, 12, "cpu",
+                     question_fn=lambda B: task.sample_questions(B))
+        assert (ro.q[0] == ro.q[3]).all() and ro.y.shape == (8, 3)
+        rl_update(fm, torch.optim.SGD(fm.parameters(), lr=1e-3), ro, cfg_rl)

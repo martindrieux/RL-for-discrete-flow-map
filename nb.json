@@ -124,6 +124,38 @@
    "kind": "curve",
    "metric": "sample_heldout_correct",
    "better": "higher"
+  },
+  {
+   "title": "Correct answers, training questions, 1 jump",
+   "label": "Correct, train questions, $K = 1$",
+   "shows": "fraction of 1000 training questions $c$ whose argmax answer ($K = 1$) is $a + b$",
+   "kind": "curve",
+   "metric": "K1_train_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Correct answers, held-out questions, 1 jump",
+   "label": "Correct, held-out questions, $K = 1$",
+   "shows": "fraction of 1000 held-out questions (never in training) whose argmax answer ($K = 1$) is $a + b$",
+   "kind": "curve",
+   "metric": "K1_heldout_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Correct answers, held-out questions, 8 jumps",
+   "label": "Correct, held-out questions, $K = 8$",
+   "shows": "same with $K = 8$ jumps",
+   "kind": "curve",
+   "metric": "K8_heldout_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Correct answers (RL), held-out questions, argmax",
+   "label": "Correct, held-out questions, argmax",
+   "shows": "fraction of 1000 held-out questions whose argmax answer is correct (RL evaluation)",
+   "kind": "curve",
+   "metric": "argmax_heldout_correct",
+   "better": "higher"
   }
  ],
  "glossary": {
@@ -171,7 +203,10 @@
    "track.algo": "tracker algorithm",
    "track.question": "tracker question",
    "task.holdout_frac": "fraction of operand pairs $(a,b)$ never shown in pretraining (with any sum)",
-   "task.holdout_seed": "seed choosing the held-out pairs"
+   "task.holdout_seed": "seed choosing the held-out pairs",
+   "cond.mode": "none: unconditional; state: question as clean one-hot rows $\\mathrm{onehot}(c)E$; encoder: question read by a separate encoder",
+   "cond.enc_depth": "number of encoder blocks (mode encoder)",
+   "allow_no_holdout": "debugging only: allow a run without a held-out set"
   },
   "symbols": {
    "\\eta": "learning rate",
