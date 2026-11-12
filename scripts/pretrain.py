@@ -7,13 +7,14 @@ import time
 
 import torch
 
-from rlfm.common import EMA, eval_sampler, load_config, make_flowmap, make_task, one_hot
+from rlfm.common import EMA, eval_sampler, load_config, make_flowmap, make_task, one_hot, require_holdout
 from rlfm.flowmap import pretrain_loss
 from rlfm.tracking import Run
 
 
 def main():
     cfg = load_config()
+    require_holdout(cfg, cfg.get("allow_no_holdout", False), "pretraining")
     torch.manual_seed(cfg.get("seed", 0))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     task, reward_mod = make_task(cfg)

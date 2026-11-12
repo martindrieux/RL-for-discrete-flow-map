@@ -8,7 +8,7 @@ import time
 
 import torch
 
-from rlfm.common import load_config, load_flowmap, make_task, task_metrics
+from rlfm.common import load_config, load_flowmap, make_task, require_holdout, task_metrics
 from rlfm.policy import policy_logits, sample_tokens, token_entropy, token_kl
 from rlfm.rl import RLConfig, collect, rl_update
 from rlfm.tracking import Run
@@ -33,6 +33,7 @@ def main():
     torch.manual_seed(cfg_all.get("seed", 0))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     fm, pre_cfg = load_flowmap(cfg_all["init"], device)
+    require_holdout(pre_cfg, cfg_all.get("allow_no_holdout", False), "RL (the pretrained checkpoint has no held-out set)")
     task, reward_mod = make_task(pre_cfg)
     V, L = task.vocab_size, task.seq_len
     ref = copy.deepcopy(fm).eval()

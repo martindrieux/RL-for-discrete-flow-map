@@ -43,6 +43,13 @@ def make_task(cfg: dict):
     raise ValueError(cfg["task"]["name"])
 
 
+def require_holdout(cfg: dict, allow: bool, what: str) -> None:
+    """Every experiment keeps a held-out set; refuse to run without one unless explicitly allowed."""
+    if cfg["task"].get("holdout_frac", 0.0) <= 0 and not allow:
+        raise SystemExit(f"{what}: task.holdout_frac must be > 0 (a held-out set is required). "
+                         "Pass allow_no_holdout=true only for debugging.")
+
+
 def make_flowmap(cfg: dict, V: int, L: int) -> FlowMap:
     m = cfg["model"]
     net = DiT(V, L, d=m["dim"], depth=m["depth"], heads=m["heads"])

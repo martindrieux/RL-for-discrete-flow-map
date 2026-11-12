@@ -235,3 +235,11 @@ Defaults set by Claude for the questions the builder check raised; Martin can ov
 | 2 | best of 1.1–1.5 at `K = 4` | number of jumps |
 
 Reference points (no training): the pretrained policy, and best-of-`G` selection from it.
+
+## 12. Held-out sets (added 2026-11-12, required)
+
+Every dataset keeps a held-out split never used for pretraining or RL updates, and every evaluation
+reports its metrics on it separately. Arithmetic: 10% of operand pairs `(a, b)` (1000 of 10^4),
+chosen by `task.holdout_seed`, never appear in pretraining with any sum; `heldout_correct` is the
+fraction of correct equations among samples whose operands are held out. The scripts refuse to run
+without a held-out split unless `allow_no_holdout=true` (debugging only, not reportable).
