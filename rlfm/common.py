@@ -25,6 +25,8 @@ def load_config(argv: list[str] | None = None) -> dict:
         for p in path:
             node = node.setdefault(p, {})
         v = yaml.safe_load(val)
+        if isinstance(v, (dict, list)) and not val.lstrip().startswith(("{", "[")):
+            v = val  # e.g. a formula containing ": " is text, not a mapping
         if isinstance(v, str):
             try:
                 v = float(v)  # YAML 1.1 reads "1e-5" as a string

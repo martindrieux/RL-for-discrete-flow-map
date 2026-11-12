@@ -128,3 +128,12 @@ def test_multiplication():
     assert abs(correct(half.decode(half.sample(20000))).float().mean().item() - 0.5) < 0.02
     assert not correct(["12*34=0400", "12*34=408", "12+34=0408"]).any()
     assert correct(["12*34=0408", "12+34=046"]).all()
+
+
+def test_cli_text_with_colon_stays_text():
+    import tempfile, yaml
+    from rlfm.common import load_config
+    with tempfile.NamedTemporaryFile("w", suffix=".yaml", delete=False) as f:
+        yaml.safe_dump({"track": {}}, f)
+    cfg = load_config([f.name, "track.formula=$a$, $b$: $h = 1$", "eval.Ks=[1,2]"])
+    assert cfg["track"]["formula"] == "$a$, $b$: $h = 1$" and cfg["eval"]["Ks"] == [1, 2]
