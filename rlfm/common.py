@@ -38,7 +38,8 @@ def make_task(cfg: dict):
     if cfg["task"]["name"] == "arithmetic":
         tc = cfg["task"]
         task = ArithmeticTask(n_digits=tc.get("n_digits", 2), frac_correct=tc.get("frac_correct", 0.5),
-                              holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0))
+                              holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0),
+                              op=tc.get("op", "add"))
         return task, arith_reward
     raise ValueError(cfg["task"]["name"])
 
@@ -107,7 +108,8 @@ def task_metrics(task, reward_mod, y: torch.Tensor, prefix: str) -> dict:
         held = [p for p in parsed if p is not None and task.is_heldout(p[0], p[1])]
         m[f"{prefix}heldout_share"] = len(held) / len(s)       # share of samples whose operands are held out
         if held:
-            m[f"{prefix}heldout_correct"] = sum(p[0] + p[1] == p[2] for p in held) / len(held)
+            m[f"{prefix}heldout_correct"] = sum(int(task.combine(torch.tensor(p[0]), torch.tensor(p[1]))) == p[2]
+                                                for p in held) / len(held)
     return m
 
 

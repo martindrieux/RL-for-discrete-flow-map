@@ -1,17 +1,18 @@
-"""Synthetic addition equations `ab+cd=efg` as fixed-length token sequences."""
+"""Synthetic equations `ab+cd=efg` (addition) or `ab*cd=efgh` (multiplication) as fixed-length token sequences."""
 
 import torch
 
-CHARS = "0123456789+="
+CHARS = "0123456789+="          # addition; multiplication uses "*" at the same id as "+"
+CHARS_MUL = "0123456789*="
 STOI = {c: i for i, c in enumerate(CHARS)}
-PLUS, EQ = STOI["+"], STOI["="]
+PLUS, EQ = STOI["+"], STOI["="]  # PLUS is the operator id for both operations
 
 
 class ArithmeticTask:
     """Generator of `a+b=c` strings, a mix of correct and incorrect sums."""
 
     def __init__(self, n_digits: int = 2, frac_correct: float = 0.5, holdout_frac: float = 0.0,
-                 holdout_seed: int = 0) -> None:
+                 holdout_seed: int = 0, op: str = "add") -> None:
         """Store the digit count and fraction of correct equations; hold out a fraction of operand pairs.
 
         A held-out pair (a, b) never appears in training data, with any sum.
@@ -20,9 +21,14 @@ class ArithmeticTask:
         self.n_digits = n_digits
         self.frac_correct = frac_correct
         self.holdout_frac, self.holdout_seed = holdout_frac, holdout_seed
-        self.vocab_size = len(CHARS)
-        self.seq_len = 3 * n_digits + 3
+        assert op in ("add", "mul")
+        self.op = op
+        self.chars = CHARS if op == "add" else CHARS_MUL
+        self.vocab_size = len(self.chars)
+        self.answer_len = n_digits + 1 if op == "add" else 2 * n_digits
+        self.seq_len = 2 * n_digits + 2 + self.answer_len
         hi = 10**n_digits
+        self.n_results = 2 * hi - 1 if op == "add" else hi * hi  # answers lie in [0, n_results)
         # Up to 3 digits: an explicit list of held-out pairs (exactly holdout_frac of all pairs).
         # From 4 digits: a pair is held out when a fixed hash of (a, b) falls below holdout_frac.
         self.hashed = n_digits >= 4
@@ -66,7 +72,7 @@ class ArithmeticTask:
 
     @property
     def prompt_len(self) -> int:
-        """Length of the question `ab+cd=`; the answer is the last n_digits + 1 tokens."""
+        """Length of the question `ab+cd=`; the answer is the last `answer_len` tokens."""
         return 2 * self.n_digits + 2
 
     def question_tokens(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
@@ -82,12 +88,16 @@ class ArithmeticTask:
         a, b = self._pairs(batch_size, heldout, generator)
         return self.question_tokens(a, b)
 
+    def combine(self, a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+        """a + b or a * b."""
+        return a + b if self.op == "add" else a * b
+
     def true_answer(self, q: torch.Tensor) -> torch.Tensor:
-        """Correct answer ids [B, n_digits + 1] for questions q [B, prompt_len]."""
+        """Correct answer ids [B, answer_len] for questions q [B, prompt_len]."""
         n = self.n_digits
         w = 10 ** torch.arange(n - 1, -1, -1, device=q.device)
         a, b = (q[:, :n] * w).sum(1), (q[:, n + 1:2 * n + 1] * w).sum(1)
-        return self._digits(a + b, n + 1)
+        return self._digits(self.combine(a, b), self.answer_len)
 
     def is_heldout(self, a: int, b: int) -> bool:
         """Whether the operand pair (a, b) is held out of training."""
@@ -95,13 +105,13 @@ class ArithmeticTask:
 
     def encode(self, s: str) -> torch.Tensor:
         """Convert a string of length L into a LongTensor of token ids [L]."""
-        return torch.tensor([STOI[c] for c in s], dtype=torch.long)
+        return torch.tensor([self.chars.index(c) for c in s], dtype=torch.long)
 
     def decode(self, ids: torch.Tensor) -> str | list[str]:
         """Convert ids [L] to a string, or ids [B, L] to a list of strings."""
         if ids.dim() == 1:
-            return "".join(CHARS[i] for i in ids.tolist())
-        return ["".join(CHARS[i] for i in row) for row in ids.tolist()]
+            return "".join(self.chars[i] for i in ids.tolist())
+        return ["".join(self.chars[i] for i in row) for row in ids.tolist()]
 
     @staticmethod
     def _digits(x: torch.Tensor, k: int) -> torch.Tensor:
@@ -113,12 +123,12 @@ class ArithmeticTask:
         """Draw a batch [B, L] of equations, a fraction `frac_correct` of which are correct."""
         n, hi = self.n_digits, 10**self.n_digits
         a, b = self._pairs(batch_size, False, generator)
-        true = a + b
-        # Uniform over [0, 2*hi - 1) minus {true}: draw in [0, 2*hi - 2) and skip over `true`.
-        r = torch.randint(0, 2 * hi - 2, (batch_size,), generator=generator)
+        true = self.combine(a, b)
+        # Uniform over [0, n_results) minus {true}: draw in [0, n_results - 1) and skip over `true`.
+        r = torch.randint(0, self.n_results - 1, (batch_size,), generator=generator)
         wrong = r + (r >= true).long()
         is_correct = torch.rand(batch_size, generator=generator) < self.frac_correct
         c = torch.where(is_correct, true, wrong)
         plus = torch.full((batch_size, 1), PLUS, dtype=torch.long)
         eq = torch.full((batch_size, 1), EQ, dtype=torch.long)
-        return torch.cat([self._digits(a, n), plus, self._digits(b, n), eq, self._digits(c, n + 1)], dim=1)
+        return torch.cat([self._digits(a, n), plus, self._digits(b, n), eq, self._digits(c, self.answer_len)], dim=1)

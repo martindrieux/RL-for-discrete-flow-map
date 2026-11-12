@@ -111,3 +111,20 @@ def test_true_answer():
     task = ArithmeticTask(n_digits=8, holdout_frac=0.1)
     q = task.question_tokens(torch.tensor([99999999, 12345678]), torch.tensor([1, 87654321]))
     assert task.decode(task.true_answer(q)) == ["100000000", "099999999"]
+
+
+def test_multiplication():
+    from rlfm.rewards.arithmetic import correct, parse
+    for n in (2, 3, 4):
+        task = ArithmeticTask(n_digits=n, frac_correct=1.0, holdout_frac=0.1, op="mul")
+        assert task.seq_len == 4 * n + 2 and task.answer_len == 2 * n
+        s = task.decode(task.sample(2000, torch.Generator().manual_seed(0)))
+        assert "*" in s[0] and correct(s).all()
+        assert not any(task.is_heldout(*parse(x)[:2]) for x in s)
+        q = task.sample_questions(50)
+        full = task.decode(torch.cat([q, task.true_answer(q)], 1))
+        assert correct(full).all()
+    half = ArithmeticTask(n_digits=2, frac_correct=0.5, holdout_frac=0.1, op="mul")
+    assert abs(correct(half.decode(half.sample(20000))).float().mean().item() - 0.5) < 0.02
+    assert not correct(["12*34=0400", "12*34=408", "12+34=0408"]).any()
+    assert correct(["12*34=0408", "12+34=046"]).all()

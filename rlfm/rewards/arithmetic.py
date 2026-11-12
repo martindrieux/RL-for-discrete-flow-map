@@ -5,13 +5,21 @@ import re
 import torch
 
 
-def parse(s: str) -> tuple[int, int, int] | None:
-    """Return (a, b, c) if s is exactly `n digits + n digits = n+1 digits`, else None."""
-    if len(s) < 6 or len(s) % 3 != 0:
+def parse_op(s: str) -> tuple[int, int, int, str] | None:
+    """(a, b, c, op) if s is `n digits, + or *, n digits, =, answer` with n + 1 (for +) or 2n (for *) answer digits."""
+    m = re.fullmatch(r"([0-9]+)([+*])([0-9]+)=([0-9]+)", s)
+    if m is None:
         return None
-    n = len(s) // 3 - 1
-    m = re.fullmatch(rf"([0-9]{{{n}}})\+([0-9]{{{n}}})=([0-9]{{{n + 1}}})", s)
-    return None if m is None else (int(m[1]), int(m[2]), int(m[3]))
+    n, op = len(m[1]), m[2]
+    if len(m[3]) != n or len(m[4]) != (n + 1 if op == "+" else 2 * n):
+        return None
+    return int(m[1]), int(m[3]), int(m[4]), op
+
+
+def parse(s: str) -> tuple[int, int, int] | None:
+    """(a, b, c) of a well-formed equation, else None."""
+    p = parse_op(s)
+    return None if p is None else p[:3]
 
 
 def well_formed(strings: list[str]) -> torch.Tensor:
@@ -21,8 +29,8 @@ def well_formed(strings: list[str]) -> torch.Tensor:
 
 def _is_correct(s: str) -> bool:
     """Whether s parses and its sum is right."""
-    p = parse(s)
-    return p is not None and p[0] + p[1] == p[2]
+    p = parse_op(s)
+    return p is not None and (p[0] + p[1] if p[3] == "+" else p[0] * p[1]) == p[2]
 
 
 def correct(strings: list[str]) -> torch.Tensor:
