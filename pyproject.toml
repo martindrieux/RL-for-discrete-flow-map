@@ -1,0 +1,16 @@
+[project]
+name = "rlfm"
+version = "0.1.0"
+description = "RL fine-tuning of discrete flow maps with categorical likelihoods"
+requires-python = ">=3.10"
+dependencies = ["torch>=2.3", "numpy", "pyyaml"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+include = ["rlfm*"]
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"

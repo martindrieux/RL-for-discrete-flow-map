@@ -1,0 +1,18 @@
+# RL on 2-digit arithmetic; reward 1 for a correct equation. Row 1.1 of the grid by default.
+seed: 0
+init: runs/arith_pretrain/last.pt
+out_dir: runs/arith_rl
+rl:
+  K: 1
+  option: A
+  tau_star: 0.9
+  temp: 1.0
+  groups: 32
+  group_size: 8
+  advantage: loo
+  mu: 1
+  clip: null
+  beta: 0.0
+train: {steps: 500, lr: 1.0e-5, grad_clip: 1.0, log_every: 10}
+eval: {n: 1000, seed: 1234, every: 25}
+track: {nb: false}

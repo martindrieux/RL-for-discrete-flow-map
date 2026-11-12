@@ -1,0 +1,183 @@
+{
+ "url": "https://lab.loopflowlabs.com",
+ "project": "rl-for-discrete-flow-map",
+ "title": "RL for discrete flow maps",
+ "headline": "sample_correct",
+ "table": [
+  "sample_correct",
+  "argmax_correct",
+  "sample_distinct_correct",
+  "K1_wellformed",
+  "K1_correct"
+ ],
+ "views": [
+  {
+   "title": "Pretraining loss",
+   "label": "Pretraining loss $\\mathcal{L}_{diag} + \\mathcal{L}_{off}$",
+   "shows": "$\\mathcal{L} = \\mathcal{L}_{diag} + \\mathcal{L}_{off}$ on the training batch (nats per token)",
+   "kind": "curve",
+   "metric": "loss",
+   "log_y": true,
+   "better": "lower"
+  },
+  {
+   "title": "Diagonal loss",
+   "label": "Diagonal cross-entropy",
+   "shows": "$\\mathcal{L}_{diag} = -\\frac{1}{L}\\sum_l x_1^l \\cdot \\log \\hat\\delta_{t,t}(I_t)^l$ (nats per token)",
+   "kind": "curve",
+   "metric": "loss_diag",
+   "log_y": true,
+   "better": "lower"
+  },
+  {
+   "title": "Semigroup loss",
+   "label": "Semigroup cross-entropy",
+   "shows": "$\\mathcal{L}_{off} = -\\frac{1}{L}\\sum_l \\bar\\delta^l \\cdot \\log \\hat\\delta_{s,t}(I_s)^l$ (nats per token; includes the entropy of $\\bar\\delta$, so its floor is not 0)",
+   "kind": "curve",
+   "metric": "loss_off",
+   "better": "lower"
+  },
+  {
+   "title": "Well-formed, 1 jump",
+   "label": "Well-formed equations, $K = 1$",
+   "shows": "fraction of 2000 argmax samples $y = \\arg\\max X_{0,1}(z)$ that parse as $ab+cd=efg$",
+   "kind": "curve",
+   "metric": "K1_wellformed",
+   "better": "higher"
+  },
+  {
+   "title": "Correct, 1 jump (pretraining)",
+   "label": "Correct equations, $K = 1$",
+   "shows": "fraction of 2000 argmax samples with $K = 1$ that are correct ($a + b = c$); data has $\\frac{1}{2}$",
+   "kind": "curve",
+   "metric": "K1_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Correct, 4 jumps (pretraining)",
+   "label": "Correct equations, $K = 4$",
+   "shows": "fraction of 2000 argmax samples with $K = 4$ that are correct",
+   "kind": "curve",
+   "metric": "K4_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Reward, sampled",
+   "label": "Correct, sampled at $T$",
+   "shows": "$\\frac{1}{1000}\\sum_n R(y_n)$, $y_n \\sim \\pi_\\theta(\\cdot \\mid z_n)$, fixed $z_n$",
+   "kind": "curve",
+   "metric": "sample_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Reward, argmax",
+   "label": "Correct, argmax decoding",
+   "shows": "$\\frac{1}{1000}\\sum_n R(\\arg\\max \\ell_\\theta(z_n))$, fixed $z_n$",
+   "kind": "curve",
+   "metric": "argmax_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Distinct correct",
+   "label": "Distinct correct equations (of 1000)",
+   "shows": "number of distinct correct strings among the 1000 sampled $y_n$ (diversity)",
+   "kind": "curve",
+   "metric": "sample_distinct_correct",
+   "better": "higher"
+  },
+  {
+   "title": "Policy entropy",
+   "label": "Token entropy $H(p_{\\theta,i})$",
+   "shows": "$\\frac{1}{L}\\sum_i H(p_{\\theta,i}(\\cdot \\mid z))$ averaged over the 1000 evaluation noises (nats)",
+   "kind": "curve",
+   "metric": "entropy",
+   "better": "higher"
+  },
+  {
+   "title": "KL to pretrained",
+   "label": "KL to pretrained policy",
+   "shows": "$\\mathbb{E}_z \\sum_i KL(p_{\\theta,i}(\\cdot\\mid z) \\Vert p_{ref,i}(\\cdot\\mid z))$ over the 1000 evaluation noises (nats per sequence)",
+   "kind": "curve",
+   "metric": "kl_ref",
+   "better": "lower"
+  },
+  {
+   "title": "Training reward",
+   "label": "Correct, training batch",
+   "shows": "$\\frac{1}{BG}\\sum_{b,g} r_{b,g}$ on the rollout batch",
+   "kind": "curve",
+   "metric": "reward_train",
+   "better": "higher"
+  }
+ ],
+ "glossary": {
+  "algos": {
+   "fmlm-direct": "$\\mathcal{L} = -x_1 \\cdot \\log\\hat\\delta_{t,t}(I_t) - \\bar\\delta \\cdot \\log \\hat\\delta_{s,t}(I_s)$, $\\bar\\delta = sg(\\gamma\\hat\\delta_{s,u}(I_s) + (1-\\gamma)\\hat\\delta_{u,t}(\\hat X_{s,u}(I_s)))$, times uniform in $\\tau$",
+   "flowmap-pg": "$\\mathcal{L}(\\theta) = -\\frac{1}{GL}\\sum_{g,i} \\min(\\rho_{g,i} A_g, \\mathrm{clip}(\\rho_{g,i}) A_g) + \\beta KL$, $\\rho_{g,i} = p_{\\theta,i}(y_{g,i}\\mid z_g)/p_{old,i}(y_{g,i}\\mid z_g)$"
+  },
+  "params": {
+   "seed": "random seed",
+   "out_dir": "output folder",
+   "init": "pretrained checkpoint the policy starts from",
+   "task.name": "dataset",
+   "task.n_digits": "$n$: digits per operand in $ab+cd=efg$",
+   "task.frac_correct": "$q$: fraction of pretraining equations with the right sum",
+   "model.dim": "$d$: transformer width",
+   "model.depth": "number of transformer blocks",
+   "model.heads": "attention heads",
+   "model.time_warp": "use $t = t(\\tau)$, $\\tau(t) = 1 - \\frac{V}{V-1}P_e(t)$ (else $t = \\tau$)",
+   "train.steps": "number of optimizer steps",
+   "train.batch_size": "$B$: pretraining batch size (half diagonal, half semigroup)",
+   "train.lr": "$\\eta$: learning rate of AdamW",
+   "train.warmup": "steps of linear warm-up of $\\eta$",
+   "train.ema": "decay of the EMA of the weights",
+   "train.grad_clip": "max gradient norm",
+   "train.log_every": "logging period (steps)",
+   "train.eval_every": "evaluation period (steps)",
+   "eval.Ks": "numbers of jumps $K$ evaluated",
+   "eval.n": "number of evaluation samples",
+   "eval.seed": "seed of the evaluation noises $z_n$",
+   "eval.every": "evaluation period (steps)",
+   "rl.K": "$K$: number of jumps of the policy",
+   "rl.option": "A: logits of the last jump $t_{K-1} \\to 1$; B: diagonal logits at $t^* = t(\\tau^*)$",
+   "rl.tau_star": "$\\tau^*$: stopping time of option B, in $\\tau$",
+   "rl.temp": "$T$: sampling temperature, $p_{\\theta,i} = \\mathrm{softmax}(\\ell_i / T)$",
+   "rl.groups": "$B$: groups per rollout batch",
+   "rl.group_size": "$G$: samples per group",
+   "rl.advantage": "loo: $A_g = r_g - \\frac{1}{G-1}\\sum_{j\\ne g} r_j$; std: $A_g = (r_g - \\bar r)/(s_r + 10^{-6})$",
+   "rl.mu": "$\\mu$: gradient steps per rollout batch",
+   "rl.clip": "$\\epsilon_c$: ratio clipping; null = no clipping",
+   "rl.beta": "$\\beta$: weight of the KL to the pretrained policy",
+   "track.nb": "record on the tracker",
+   "track.subproject": "tracker subproject",
+   "track.title": "tracker title",
+   "track.formula": "tracker formula",
+   "track.algo": "tracker algorithm",
+   "track.question": "tracker question"
+  },
+  "symbols": {
+   "\\eta": "learning rate",
+   "L": "sequence length",
+   "V": "vocabulary size",
+   "x_1": "one-hot data in $\\{0,1\\}^{L \\times V}$",
+   "x_0": "noise $\\sim \\mathcal{N}(0, I)$",
+   "I_t": "$(1-t)x_0 + t x_1$, $t = 0$ noise, $t = 1$ data",
+   "\\hat\\delta_{s,t}": "two-time denoiser, softmax output of the network",
+   "\\hat X_{s,t}": "flow map $\\frac{1-t}{1-s}x + \\frac{t-s}{1-s}\\hat\\delta_{s,t}(x)$",
+   "\\tau": "reparameterised time, $\\tau(t) = 1 - \\frac{V}{V-1}P_e(t)$",
+   "P_e": "probability that $\\arg\\max$ of a row of $I_t$ is not the data token",
+   "\\gamma": "$\\frac{(1-t)(u-s)}{(1-u)(t-s)}$",
+   "z": "initial noise of a sample",
+   "y": "sampled tokens",
+   "\\ell": "logits of the policy",
+   "T": "sampling temperature",
+   "p_{\\theta,i}": "$\\mathrm{softmax}(\\ell_i/T)$, policy at position $i$",
+   "G": "group size",
+   "A_g": "advantage",
+   "R": "reward, 1 if the equation is correct",
+   "\\beta": "KL weight",
+   "\\rho": "probability ratio new/old",
+   "K": "number of jumps"
+  }
+ }
+}

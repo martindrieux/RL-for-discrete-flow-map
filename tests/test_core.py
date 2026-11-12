@@ -1,0 +1,107 @@
+import itertools
+
+import torch
+
+from rlfm.flowmap import FlowMap, jump, pretrain_loss, sample
+from rlfm.model import DiT
+from rlfm.policy import policy_logits, token_logp
+from rlfm.rl import RLConfig, Rollout, advantages, pg_loss, rl_update
+from rlfm.timewarp import TimeWarp, prob_correct
+
+
+def tiny(V=12, L=9):
+    torch.manual_seed(0)
+    return FlowMap(DiT(V, L, d=32, depth=1, heads=2), TimeWarp(V))
+
+
+def test_timewarp_endpoints_monotone_inverse():
+    w = TimeWarp(12)
+    t = torch.linspace(0, 1, 101)
+    tau = w.tau(t)
+    assert abs(tau[0].item()) < 1e-6 and abs(tau[-1].item() - 1) < 1e-6
+    assert (tau[1:] >= tau[:-1]).all()
+    ti = torch.linspace(0.2, 0.8, 13)
+    assert torch.allclose(w.t_of(w.tau(ti)), ti, atol=2e-3)
+
+
+def test_prob_correct_matches_monte_carlo():
+    V, N = 12, 200_000
+    g = torch.Generator().manual_seed(0)
+    for t in (0.3, 0.5, 0.7):
+        x = (1 - t) * torch.randn(N, V, generator=g)
+        x[:, 0] += t
+        mc = (x.argmax(-1) == 0).float().mean().item()
+        assert abs(mc - prob_correct(torch.tensor([t]), V).item()) < 0.01
+
+
+def test_jump_boundaries():
+    x, d = torch.randn(4, 9, 12), torch.softmax(torch.randn(4, 9, 12), -1)
+    s = torch.full((4,), 0.3)
+    assert torch.allclose(jump(x, s, s, d), x)
+    assert torch.allclose(jump(x, s, torch.ones(4), d), d)
+
+
+def test_semigroup_weight_gamma():
+    """delta_{s,t} recovered from X_{u,t} o X_{s,u} equals gamma delta_{s,u} + (1-gamma) delta_{u,t}."""
+    x, d1, d2 = torch.randn(3, 5, 7), torch.randn(3, 5, 7), torch.randn(3, 5, 7)
+    s, u, t = torch.full((3,), 0.2), torch.full((3,), 0.5), torch.full((3,), 0.9)
+    Xst = jump(jump(x, s, u, d1), u, t, d2)
+    d_st = (Xst - ((1 - t) / (1 - s))[:, None, None] * x) * ((1 - s) / (t - s))[:, None, None]
+    gamma = ((1 - t) * (u - s) / ((1 - u) * (t - s)))[:, None, None]
+    assert torch.allclose(d_st, gamma * d1 + (1 - gamma) * d2, atol=1e-5)
+
+
+def test_pretrain_loss_and_sampler_run():
+    fm = tiny()
+    x1 = torch.nn.functional.one_hot(torch.randint(0, 12, (8, 9)), 12).float()
+    out = pretrain_loss(fm, x1)
+    out["loss"].backward()
+    assert torch.isfinite(out["loss"])
+    assert sample(fm, torch.randn(2, 9, 12), K=3).shape == (2, 9, 12)
+
+
+def test_logp_matches_bruteforce():
+    logits, y = torch.randn(2, 3, 4), torch.randint(0, 4, (2, 3))
+    p = torch.softmax(logits / 2.0, -1)
+    brute = torch.log(torch.stack([p[b, torch.arange(3), y[b]].prod() for b in range(2)]))
+    assert torch.allclose(token_logp(logits, y, 2.0).sum(-1), brute, atol=1e-5)
+
+
+def test_policy_logits_options_have_gradients():
+    fm = tiny()
+    z = torch.randn(2, 9, 12)
+    for opt, K in [("A", 1), ("A", 3), ("B", 2)]:
+        fm.zero_grad()
+        policy_logits(fm, z, K, opt, 0.9).sum().backward()
+        assert any(p.grad is not None and p.grad.abs().sum() > 0 for p in fm.parameters())
+
+
+def test_reinforce_loo_is_unbiased_on_a_bandit():
+    """Policy prod_i softmax(theta_i); mean LOO gradient matches the exact gradient of E[r]."""
+    torch.manual_seed(0)
+    L, V, G, groups = 2, 3, 4, 40_000
+    theta = torch.randn(L, V, requires_grad=True)
+    table = torch.rand(V**L)
+    ys = torch.tensor(list(itertools.product(range(V), repeat=L)))
+    logp_all = torch.log_softmax(theta, -1)[torch.arange(L), ys].sum(-1)
+    exact = torch.autograd.grad((logp_all.exp() * table).sum(), theta)[0]
+    p = torch.softmax(theta.detach(), -1)
+    y = torch.stack([torch.multinomial(p[i], groups * G, replacement=True) for i in range(L)], -1)
+    r = table[(y * torch.tensor([V, 1])).sum(-1)]
+    logp = torch.log_softmax(theta, -1)[torch.arange(L), y]          # [N, L]
+    loss = pg_loss(logp, logp.detach(), advantages(r, G, "loo"), None) * L  # undo the 1/L token mean
+    est = torch.autograd.grad(-loss, theta)[0]
+    assert torch.allclose(est, exact, atol=0.02), (est, exact)
+
+
+def test_rl_update_runs_with_clip_and_kl():
+    fm, ref = tiny(), tiny()
+    cfg = RLConfig(K=2, groups=2, group_size=4, advantage="std", mu=2, clip=0.2, beta=0.1)
+    z = torch.randn(8, 9, 12)
+    with torch.no_grad():
+        lg = policy_logits(fm, z, 2)
+        y = lg.argmax(-1)
+        ro = Rollout(z, y, token_logp(lg, y, 1.0), torch.rand(8), policy_logits(ref, z, 2))
+    opt = torch.optim.SGD(fm.parameters(), lr=1e-3)
+    d = rl_update(fm, opt, ro, cfg)
+    assert all(map(lambda v: v == v, d.values()))

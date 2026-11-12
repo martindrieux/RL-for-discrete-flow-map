@@ -1,0 +1,24 @@
+== Time reparameterisation
+$1 - P_e(t) = \int \phi(\xi) \Phi(\xi + \frac{t}{1-t})^{V-1} d\xi$   // closed form for one-hot data, Gaussian noise
+$\tau(t) = 1 - \frac{V}{V-1} P_e(t)$, tabulated; $t(\tau)$ by interpolation   // only if `model.time_warp`
+
+== Training step
+input: batch $x_1^{(1)}, \dots, x_1^{(B)}$ with $B$ = `train.batch_size`, first half for $\mathcal{L}_{diag}$, second half for $\mathcal{L}_{off}$
+$x_0 \sim \mathcal{N}(0, I)$
+$\tau \sim \mathcal{U}[0,1]$, $t = t(\tau)$, $I_t = (1-t)x_0 + t x_1$
+$\mathcal{L}_{diag} = -\frac{1}{L}\sum_l x_1^l \cdot \log \hat\delta_{t,t}(I_t)^l$
+$h \sim \mathcal{U}[0,1]$, $\tau_s \sim \mathcal{U}[0, 1-h]$, $\tau_t = \tau_s + h$, $\tau_u = \frac{\tau_s + \tau_t}{2}$
+$(s, u, t) = (t(\tau_s), t(\tau_u), t(\tau_t))$, $I_s = (1-s)x_0 + s x_1$
+$\hat X_{s,u}(I_s) = \frac{1-u}{1-s} I_s + \frac{u-s}{1-s} \hat\delta_{s,u}(I_s)$
+$\gamma = \frac{(1-t)(u-s)}{(1-u)(t-s)}$
+$\bar\delta = sg(\gamma \hat\delta_{s,u}(I_s) + (1-\gamma)\hat\delta_{u,t}(\hat X_{s,u}(I_s)))$   // current weights, no EMA
+$\mathcal{L}_{off} = -\frac{1}{L}\sum_l \bar\delta^l \cdot \log \hat\delta_{s,t}(I_s)^l$
+$\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{diag} + \mathcal{L}_{off}))$, $\eta$ = `train.lr`
+$\bar\theta \leftarrow \lambda \bar\theta + (1-\lambda)\theta$, $\lambda$ = `train.ema`
+
+== Generating samples
+input: number of jumps $K$
+$x_0 = z \sim \mathcal{N}(0, I)$, $t_k = t(k/K)$
+for $k = 0, \dots, K-1$:
+    $x_{k+1} = \frac{1-t_{k+1}}{1-t_k} x_k + \frac{t_{k+1}-t_k}{1-t_k}\hat\delta_{t_k,t_{k+1}}(x_k)$
+return $y_i = \arg\max_v x_K[i, v]$

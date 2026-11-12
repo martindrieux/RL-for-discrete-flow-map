@@ -1,0 +1,19 @@
+== Policy
+input: noise $z \sim \mathcal{N}(0, I_{L \times V})$, $K$ = `rl.K`, $T$ = `rl.temp`
+logits by the rule `rl.option`:
+    A: $t_k = t(k/K)$; $x_{k+1} = \hat X_{t_k,t_{k+1}}(x_k)$ for $k < K-1$; $\ell = \ell_{t_{K-1},1}(x_{K-1})$
+    B: $t_k = t(k\tau^*/K)$, $\tau^*$ = `rl.tau_star`; $x_{k+1} = \hat X_{t_k,t_{k+1}}(x_k)$ for $k < K$; $\ell = \ell_{t_K,t_K}(x_K)$
+$p_{\theta,i}(v \mid z) = \mathrm{softmax}(\ell_i / T)_v$, $y_i \sim \mathrm{Cat}(p_{\theta,i})$ independently
+$\log \pi_\theta(y \mid z) = \sum_i \log p_{\theta,i}(y_i \mid z)$   // gradient through all jumps
+
+== Update
+input: $B$ = `rl.groups` groups of $G$ = `rl.group_size` pairs $(z_g, y_g) \sim \pi_{old}$, rewards $r_g = R(y_g)$
+$A_g$ by the rule `rl.advantage`:
+    loo: $A_g = r_g - \frac{1}{G-1}\sum_{j \ne g} r_j$
+    std: $A_g = (r_g - \bar r)/(s_r + 10^{-6})$, $\bar r$, $s_r$ mean and std of the group
+repeat $\mu$ = `rl.mu` times:
+    $\rho_{g,i} = p_{\theta,i}(y_{g,i} \mid z_g) / p_{old,i}(y_{g,i} \mid z_g)$
+    if $\epsilon_c$ = `rl.clip` is null: $\mathcal{L}_{pg} = -\frac{1}{GL}\sum_{g,i} sg(A_g) \log p_{\theta,i}(y_{g,i} \mid z_g)$
+    else: $\mathcal{L}_{pg} = -\frac{1}{GL}\sum_{g,i} \min(\rho_{g,i} A_g, \mathrm{clip}(\rho_{g,i}, 1-\epsilon_c, 1+\epsilon_c) A_g)$
+    $\mathcal{L}_{KL} = \frac{1}{GL}\sum_{g,i} KL(p_{\theta,i}(\cdot \mid z_g) \Vert p_{ref,i}(\cdot \mid z_g))$   // $p_{ref}$: frozen pretrained policy from the same $z_g$
+    $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \beta \mathcal{L}_{KL}))$, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
