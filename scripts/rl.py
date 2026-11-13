@@ -70,14 +70,18 @@ def main():
     run = Run(out, use_nb=trk.get("nb", False), subproject=trk.get("subproject"), title=trk.get("title"),
               formula=trk.get("formula"), algo=trk.get("algo"), config=cfg_all, question=trk.get("question"))
 
-    reward_kind = cfg_all.get("reward", "exact")  # exact: 1 for a correct equation; digits: fraction of correct answer digits
-    assert reward_kind in ("exact", "digits")
-    if reward_kind == "digits" and not conditional:
-        raise ValueError("reward=digits needs a conditional model (the true answer comes from the question)")
+    # exact: 1 for a correct equation; digits: fraction of correct answer digits;
+    # per_digit: one reward per answer digit (1 if correct), so each digit gets its own advantage
+    reward_kind = cfg_all.get("reward", "exact")
+    assert reward_kind in ("exact", "digits", "per_digit")
+    if reward_kind != "exact" and not conditional:
+        raise ValueError(f"reward={reward_kind} needs a conditional model (the true answer comes from the question)")
 
     def reward_fn(y, q=None):
         if reward_kind == "digits":
             return reward_mod.digit_fraction(y, task.true_answer(q))
+        if reward_kind == "per_digit":
+            return reward_mod.digit_correct(y, task.true_answer(q))
         full = y if q is None else torch.cat([q, y], 1)
         return reward_mod.reward(task.decode(full.cpu()))
 

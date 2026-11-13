@@ -134,3 +134,14 @@ def test_conditional_modes_pretrain_policy_and_rl():
                      question_fn=lambda B: task.sample_questions(B))
         assert (ro.q[0] == ro.q[3]).all() and ro.y.shape == (8, 3)
         rl_update(fm, torch.optim.SGD(fm.parameters(), lr=1e-3), ro, cfg_rl)
+
+
+def test_per_token_advantages():
+    from rlfm.rl import advantages, pg_loss
+    r = torch.tensor([[1., 0.], [0., 0.], [1., 1.], [0., 1.]])  # 2 groups of G=2, L=2
+    A = advantages(r, 2, "loo")
+    assert torch.equal(A, torch.tensor([[1., 0.], [-1., 0.], [1., 0.], [-1., 0.]]))
+    assert torch.equal(advantages(r.mean(1), 2, "loo"), torch.tensor([0.5, -0.5, 0.5, -0.5]))
+    logp = torch.full((4, 2), -1.0, requires_grad=True)
+    pg_loss(logp, logp.detach(), A, None).backward()
+    assert torch.equal(logp.grad, -A / 8)

@@ -24,3 +24,4 @@ $\log \pi_\theta(y \mid z, c) = \sum_{i=1}^{L_a} \log p_{\theta,i}(y_i \mid z, c
 $r_g$ by the rule `reward`:
     exact: $r_g = \mathbb{1}[y_g = y^*(c_b)]$   // $y^*(c)$: true answer digits
     digits: $r_g = \frac{1}{L_a}\sum_{i=1}^{L_a} \mathbb{1}[y_{g,i} = y^*_i(c_b)]$
+    per_digit: $r_{g,i} = \mathbb{1}[y_{g,i} = y^*_i(c_b)]$, one reward per digit; then $A_{g,i}$ = the rule `rl.advantage` applied per digit $i$, e.g. $A_{g,i} = r_{g,i} - \frac{1}{G-1}\sum_{j \ne g} r_{j,i}$, and $A_g \to A_{g,i}$ in $\mathcal{L}_{pg}$

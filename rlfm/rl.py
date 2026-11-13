@@ -31,7 +31,7 @@ class Rollout:
     z: torch.Tensor          # [N, L, V], N = B * G, groups contiguous
     y: torch.Tensor          # [N, L]
     logp_old: torch.Tensor   # [N, L] per-token old log-probabilities
-    reward: torch.Tensor     # [N]
+    reward: torch.Tensor     # [N], or [N, L] for a per-token reward
     logits_ref: torch.Tensor | None  # [N, L, V] reference-policy logits from the same z
     q: torch.Tensor | None = None    # [N, Lq] question of each sample (shared within a group), or None
 
@@ -57,21 +57,28 @@ def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable, cfg: RLConfig
 
 @nb.core
 def advantages(reward: torch.Tensor, G: int, kind: str) -> torch.Tensor:
-    """loo: A_g = r_g - mean_{j != g} r_j.  std: A_g = (r_g - mean_j r_j) / (std_j r_j + 1e-6)."""
-    r = reward.view(-1, G)
+    """loo: A_g = r_g - mean_{j != g} r_j.  std: A_g = (r_g - mean_j r_j) / (std_j r_j + 1e-6).
+
+    reward [N] gives A [N]; a per-token reward [N, L] gives A [N, L], each token compared within its group.
+    """
+    r = reward.view(-1, G, *reward.shape[1:])
     if kind == "loo":
         A = r - (r.sum(1, keepdim=True) - r) / (G - 1)
     elif kind == "std":
         A = (r - r.mean(1, keepdim=True)) / (r.std(1, keepdim=True) + 1e-6)
     else:
         raise ValueError(kind)
-    return A.reshape(-1)
+    return A.reshape(reward.shape)
 
 
 @nb.core
 def pg_loss(logp: torch.Tensor, logp_old: torch.Tensor, A: torch.Tensor, clip: float | None) -> torch.Tensor:
-    """No clip: -mean_{g,i} sg(A_g) log p_i.  Clip: -mean_{g,i} min(rho A, clip(rho, 1-eps, 1+eps) A)."""
-    A = A.detach()[:, None]
+    """No clip: -mean_{g,i} sg(A_{g,i}) log p_i.  Clip: -mean_{g,i} min(rho A, clip(rho, 1-eps, 1+eps) A).
+
+    A [N] (one advantage per sample, shared by its tokens) or [N, L] (one per token).
+    """
+    A = A.detach()
+    A = A[:, None] if A.dim() == 1 else A
     if clip is None:
         return -(A * logp).mean()
     rho = torch.exp(logp - logp_old)

@@ -50,4 +50,9 @@ def distinct_correct(strings: list[str]) -> int:
 
 def digit_fraction(y: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
     """FloatTensor [B]: fraction of answer digits equal to the true answer's, y and target [B, L_a]."""
-    return (y == target).float().mean(1)
+    return digit_correct(y, target).mean(1)
+
+
+def digit_correct(y: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """FloatTensor [B, L_a]: 1.0 where an answer digit equals the true answer's digit."""
+    return (y == target).float()
