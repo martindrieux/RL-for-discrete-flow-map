@@ -145,3 +145,42 @@ def test_per_token_advantages():
     logp = torch.full((4, 2), -1.0, requires_grad=True)
     pg_loss(logp, logp.detach(), A, None).backward()
     assert torch.equal(logp.grad, -A / 8)
+
+
+def _perturbed_tiny():
+    fm = tiny()
+    for mod in fm.net.modules():  # zero-initialised layers would make every jump output uniform logits
+        if isinstance(mod, torch.nn.Linear) and mod.out_features in (12, 6 * 32, 2 * 32):
+            torch.nn.init.normal_(mod.weight, std=0.1)
+    return fm
+
+
+def test_stochastic_chain_one_jump_is_the_current_policy():
+    from rlfm.policy import chain_logits, sample_tokens, stochastic_chain
+    fm, z = _perturbed_tiny(), torch.randn(6, 9, 12)
+    xs, ys, ls = stochastic_chain(fm, z, 1, 1.0, gen=torch.Generator().manual_seed(3))
+    lg = policy_logits(fm, z, 1)
+    assert torch.allclose(ls[:, 0], lg, atol=1e-5)
+    assert torch.equal(ys[:, 0], sample_tokens(lg, 1.0, torch.Generator().manual_seed(3)))
+    xs, ys, ls = stochastic_chain(fm, z, 3, 1.0)
+    assert xs.shape == (6, 3, 9, 12) and ys.shape == (6, 3, 9)
+    assert torch.allclose(chain_logits(fm, xs, 3), ls, atol=1e-5)  # batched recomputation matches the rollout
+    # the bridge: x_{k+1} - ((1-t1)/(1-t0)) x_k is (t1-t0)/(1-t0) times the one-hot of y_k
+    from rlfm.flowmap import grid
+    g = grid(fm, 3)
+    r = (xs[:, 1] - (1 - g[1]) / (1 - g[0]) * xs[:, 0]) / ((g[1] - g[0]) / (1 - g[0]))
+    assert torch.allclose(r, torch.nn.functional.one_hot(ys[:, 0], 12).float(), atol=1e-4)
+
+
+def test_stochastic_and_rwr_updates_run():
+    from rlfm.rl import collect
+    fm = _perturbed_tiny()
+    for cfg in (RLConfig(K=3, groups=2, group_size=4, stochastic=True),
+                RLConfig(K=3, groups=2, group_size=4, stochastic=True, mu=2, clip=0.2),
+                RLConfig(K=3, groups=2, group_size=4, rwr=1.0)):
+        ro = collect(fm, None, lambda y: (y == 3).float(), cfg, 9, 12, "cpu")  # per-token reward [N, L]
+        assert ro.reward.shape == (8, 9)
+        before = [p.clone() for p in fm.parameters()]
+        d = rl_update(fm, torch.optim.SGD(fm.parameters(), lr=1e-2), ro, cfg)
+        assert all(v == v for v in d.values())
+        assert any(not torch.equal(a, b) for a, b in zip(before, fm.parameters()))

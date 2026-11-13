@@ -31,6 +31,38 @@ def policy_logits(fm: FlowMap, z: torch.Tensor, K: int, option: str = "A", tau_s
     return fm.logits(x, g[K].expand(B), g[K].expand(B), q).float()
 
 
+@nb.core
+def stochastic_chain(fm: FlowMap, z: torch.Tensor, K: int, temp: float, q: torch.Tensor | None = None,
+                     gen: torch.Generator | None = None, greedy: bool = False):
+    """Every jump samples tokens: y_k ~ Cat(softmax(l_{t_k,t_{k+1}}(x_k) / T)),
+    x_{k+1} = ((1-t_{k+1})/(1-t_k)) x_k + ((t_{k+1}-t_k)/(1-t_k)) onehot(y_k)   (the interpolant's bridge).
+
+    Returns states [B, K, L, V] (x_0 = z, ..., x_{K-1}), tokens [B, K, L] (y_{K-1} is the answer), logits [B, K, L, V].
+    greedy: argmax instead of sampling at every jump. No gradient: states are treated as given.
+    """
+    B, V = z.shape[0], z.shape[-1]
+    g, x = grid(fm, K, device=z.device), z
+    xs, ys, ls = [], [], []
+    with torch.no_grad():
+        for k in range(K):
+            s, t = g[k].expand(B), g[k + 1].expand(B)
+            logits = fm.logits(x, s, t, q).float()
+            y = logits.argmax(-1) if greedy else sample_tokens(logits, temp, gen)
+            xs.append(x); ys.append(y); ls.append(logits)
+            x = jump(x, s, t, F.one_hot(y, V).to(x.dtype))
+    return torch.stack(xs, 1), torch.stack(ys, 1), torch.stack(ls, 1)
+
+
+def chain_logits(fm: FlowMap, xs: torch.Tensor, K: int, q: torch.Tensor | None = None) -> torch.Tensor:
+    """Logits l_{t_k, t_{k+1}}(x_k) at stored states xs [B, K, L, V], in one batched call."""
+    B, _, L, V = xs.shape
+    g = grid(fm, K, device=xs.device)
+    s = g[:K].repeat(B)
+    t = g[1:].repeat(B)
+    qq = None if q is None else q.repeat_interleave(K, 0)
+    return fm.logits(xs.reshape(B * K, L, V), s, t, qq).float().view(B, K, L, V)
+
+
 def token_logp(logits: torch.Tensor, y: torch.Tensor, temp: float) -> torch.Tensor:
     """log p_i(y_i | z) with p_i = softmax(l_i / T); shape [B, L]."""
     return F.log_softmax(logits / temp, dim=-1).gather(-1, y[..., None]).squeeze(-1)

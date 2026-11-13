@@ -5,6 +5,9 @@ logits by the rule `rl.option`:
     B: $t_k = t(k\tau^*/K)$, $\tau^*$ = `rl.tau_star`; $x_{k+1} = \hat X_{t_k,t_{k+1}}(x_k)$ for $k < K$; $\ell = \ell_{t_K,t_K}(x_K)$
 $p_{\theta,i}(v \mid z) = \mathrm{softmax}(\ell_i / T)_v$, $y_i \sim \mathrm{Cat}(p_{\theta,i})$ independently
 $\log \pi_\theta(y \mid z) = \sum_i \log p_{\theta,i}(y_i \mid z)$   // gradient through all jumps
+if `rl.stochastic`: every jump samples (option A), states given, no gradient through them
+    for $k = 0, \dots, K-1$: $\hat y_{k,i} \sim \mathrm{Cat}(\mathrm{softmax}(\ell_{t_k,t_{k+1}}(x_k)_i / T))$, $x_{k+1} = \frac{1-t_{k+1}}{1-t_k} x_k + \frac{t_{k+1}-t_k}{1-t_k} \mathrm{onehot}(\hat y_k)$
+    $y = \hat y_{K-1}$, $\log \pi_\theta = \sum_{k,i} \log \mathrm{softmax}(\ell_{t_k,t_{k+1}}(x_k)_i / T)(\hat y_{k,i})$
 
 == Update
 input: $B$ = `rl.groups` groups of $G$ = `rl.group_size` pairs $(z_g, y_g) \sim \pi_{old}$, rewards $r_g = R(y_g)$
@@ -16,7 +19,9 @@ repeat $\mu$ = `rl.mu` times:
     if $\epsilon_c$ = `rl.clip` is null: $\mathcal{L}_{pg} = -\frac{1}{GL}\sum_{g,i} sg(A_g) \log p_{\theta,i}(y_{g,i} \mid z_g)$
     else: $\mathcal{L}_{pg} = -\frac{1}{GL}\sum_{g,i} \min(\rho_{g,i} A_g, \mathrm{clip}(\rho_{g,i}, 1-\epsilon_c, 1+\epsilon_c) A_g)$
     $\mathcal{L}_{KL} = \frac{1}{GL}\sum_{g,i} KL(p_{\theta,i}(\cdot \mid z_g) \Vert p_{ref,i}(\cdot \mid z_g))$   // $p_{ref}$: frozen pretrained policy from the same $z_g$
-    $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \beta \mathcal{L}_{KL}))$, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
+    if `rl.stochastic`: $\mathcal{L}_{pg}$ sums over the tokens $\hat y_{g,k,i}$ of all jumps with $A_{g,i}$, divided by $GKL$
+    $\mathcal{L}_{rwr} = -\frac{1}{G(K-1)L}\sum_{g,k<K-1,i} sg(A_{g,i}) \log \mathrm{softmax}(\ell_{t_k,1}(x_k)_i / T)(y_{g,i})$   // deterministic states $x_k$, given
+    $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \lambda \mathcal{L}_{rwr} + \beta \mathcal{L}_{KL}))$, $\lambda$ = `rl.rwr`, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
 
 == Conditional version (when the pretrained model has `cond.mode`)
 each group shares one question $c_b$ drawn from the training questions; $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer

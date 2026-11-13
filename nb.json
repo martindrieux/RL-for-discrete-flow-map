@@ -212,6 +212,8 @@
    "rl.advantage": "loo: $A_g = r_g - \\frac{1}{G-1}\\sum_{j\\ne g} r_j$; std: $A_g = (r_g - \\bar r)/(s_r + 10^{-6})$",
    "rl.mu": "$\\mu$: gradient steps per rollout batch",
    "rl.clip": "$\\epsilon_c$: ratio clipping; null = no clipping",
+   "rl.stochastic": "every jump samples tokens: $x_{k+1} = \\frac{1-t_{k+1}}{1-t_k} x_k + \\frac{t_{k+1}-t_k}{1-t_k} \\mathrm{onehot}(\\hat y_k)$, $\\hat y_k \\sim \\mathrm{Cat}(\\mathrm{softmax}(\\ell_{t_k,t_{k+1}}(x_k)/T))$; the policy is the chain of $K$ categoricals",
+   "rl.rwr": "$\\lambda$: weight of $\\mathcal{L}_{rwr}$, the final answer $y$ as target of $\\mathrm{softmax}(\\ell_{t_k,1}(x_k)/T)$ for $k < K-1$, weighted by $A$",
    "rl.beta": "$\\beta$: weight of the KL to the pretrained policy",
    "track.nb": "record on the tracker",
    "track.subproject": "tracker subproject",

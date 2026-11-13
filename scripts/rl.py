@@ -9,7 +9,7 @@ import time
 import torch
 
 from rlfm.common import cond_mode, load_config, load_flowmap, make_task, require_holdout, task_metrics
-from rlfm.policy import policy_logits, sample_tokens, token_entropy, token_kl
+from rlfm.policy import chain_logits, policy_logits, sample_tokens, stochastic_chain, token_entropy, token_kl
 from rlfm.rl import RLConfig, collect, rl_update
 from rlfm.tracking import Run
 
@@ -30,19 +30,30 @@ def evaluate(fm, ref, task, reward_mod, cfg: RLConfig, z: torch.Tensor, seed: in
 
 @torch.no_grad()
 def evaluate_conditional(fm, ref, task, reward_mod, cfg: RLConfig, evalset: dict, seed: int) -> dict:
-    """Fixed training and held-out questions with fixed noises: correct answers when sampling at T and with argmax."""
+    """Fixed training and held-out questions with fixed noises: correct answers when sampling at T and with argmax.
+
+    Stochastic chain: "sample" samples at every jump, "argmax" takes the argmax at every jump, "det" is the argmax of
+    the deterministic flow map's last jump; entropy and KL are over the tokens of all jumps of the sampled chain.
+    """
     m = {}
     for name, (q, z) in evalset.items():
-        logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q)
-        logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star, q)
         g = torch.Generator(device=z.device).manual_seed(seed)
-        for dec, y in (("sample", sample_tokens(logits, cfg.temp, g)), ("argmax", logits.argmax(-1))):
+        if cfg.stochastic:
+            xs, ys, logits = stochastic_chain(fm, z, cfg.K, cfg.temp, q, g)
+            logits_ref = chain_logits(ref, xs, cfg.K, q)
+            decs = (("sample", ys[:, -1]), ("argmax", stochastic_chain(fm, z, cfg.K, cfg.temp, q, greedy=True)[1][:, -1]),
+                    ("det", policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q).argmax(-1)))
+        else:
+            logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q)
+            logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star, q)
+            decs = (("sample", sample_tokens(logits, cfg.temp, g)), ("argmax", logits.argmax(-1)))
+        for dec, y in decs:
             s = task.decode(torch.cat([q, y], 1).cpu())
             m[f"{dec}_{name}_correct"] = reward_mod.correct(s).float().mean().item()
             m[f"{dec}_{name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
         if name == "train":
             m["entropy"] = token_entropy(logits, cfg.temp).mean().item()
-            m["kl_ref"] = token_kl(logits, logits_ref, cfg.temp).sum(-1).mean().item()
+            m["kl_ref"] = token_kl(logits, logits_ref, cfg.temp).flatten(1).sum(-1).mean().item()
     m["sample_correct"] = m["sample_train_correct"]  # headline metric of the project
     m["argmax_correct"] = m["argmax_train_correct"]
     return m
@@ -62,6 +73,8 @@ def main():
     for p in ref.parameters():
         p.requires_grad_(False)
     rc = RLConfig(**cfg_all["rl"])
+    if rc.stochastic and not conditional:
+        raise ValueError("rl.stochastic is evaluated only for conditional models so far")
     tr = cfg_all["train"]
     opt = torch.optim.AdamW(fm.net.parameters(), lr=tr["lr"], weight_decay=0.0)
     out = cfg_all["out_dir"]
