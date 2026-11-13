@@ -202,6 +202,7 @@
    "eval.n": "number of evaluation samples",
    "eval.seed": "seed of the evaluation noises $z_n$",
    "eval.every": "evaluation period (steps)",
+   "reward": "exact: $r = \\mathbb{1}[y = y^*(c)]$; digits: $r = \\frac{1}{L_a}\\sum_i \\mathbb{1}[y_i = y^*_i(c)]$, $y^*(c)$ true answer",
    "rl.K": "$K$: number of jumps of the policy",
    "rl.option": "A: logits of the last jump $t_{K-1} \\to 1$; B: diagonal logits at $t^* = t(\\tau^*)$",
    "rl.tau_star": "$\\tau^*$: stopping time of option B, in $\\tau$",

@@ -137,3 +137,11 @@ def test_cli_text_with_colon_stays_text():
         yaml.safe_dump({"track": {}}, f)
     cfg = load_config([f.name, "track.formula=$a$, $b$: $h = 1$", "eval.Ks=[1,2]"])
     assert cfg["track"]["formula"] == "$a$, $b$: $h = 1$" and cfg["eval"]["Ks"] == [1, 2]
+
+
+def test_digit_fraction_reward():
+    from rlfm.rewards.arithmetic import digit_fraction
+    task = ArithmeticTask(n_digits=2, holdout_frac=0.1, op="mul")
+    q = task.question_tokens(torch.tensor([12, 99]), torch.tensor([34, 99]))
+    y = torch.stack([task.encode("0408"), task.encode("9800")])  # 99*99 = 9801
+    assert digit_fraction(y, task.true_answer(q)).tolist() == [1.0, 0.75]

@@ -46,3 +46,8 @@ def reward(strings: list[str]) -> torch.Tensor:
 def distinct_correct(strings: list[str]) -> int:
     """Number of distinct correct strings."""
     return len({s for s in strings if _is_correct(s)})
+
+
+def digit_fraction(y: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """FloatTensor [B]: fraction of answer digits equal to the true answer's, y and target [B, L_a]."""
+    return (y == target).float().mean(1)

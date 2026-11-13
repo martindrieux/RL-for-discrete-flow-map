@@ -2,6 +2,7 @@
 seed: 0
 init: runs/arith_pretrain/last.pt
 out_dir: runs/arith_rl
+reward: exact   # exact: 1 for a correct equation; digits: fraction of correct answer digits (conditional only)
 rl:
   K: 1
   option: A

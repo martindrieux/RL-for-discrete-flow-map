@@ -19,5 +19,8 @@ repeat $\mu$ = `rl.mu` times:
     $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \beta \mathcal{L}_{KL}))$, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
 
 == Conditional version (when the pretrained model has `cond.mode`)
-each group shares one question $c_b$ drawn from the training questions; $z_g \in \mathbb{R}^{3 \times V}$ covers the answer
-$\log \pi_\theta(y \mid z, c) = \sum_{i=1}^{3} \log p_{\theta,i}(y_i \mid z, c)$, $r_g = R(c_b, y_g)$
+each group shares one question $c_b$ drawn from the training questions; $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer
+$\log \pi_\theta(y \mid z, c) = \sum_{i=1}^{L_a} \log p_{\theta,i}(y_i \mid z, c)$, $L_a$ answer length
+$r_g$ by the rule `reward`:
+    exact: $r_g = \mathbb{1}[y_g = y^*(c_b)]$   // $y^*(c)$: true answer digits
+    digits: $r_g = \frac{1}{L_a}\sum_{i=1}^{L_a} \mathbb{1}[y_{g,i} = y^*_i(c_b)]$
