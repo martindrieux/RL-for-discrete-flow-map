@@ -1,0 +1,6 @@
+== Supervised fine-tuning of the policy (comparison for RL)
+input: pretrained flow map, policy as in flowmap-pg with $K$ = `rl.K`, $T$ = `rl.temp`; $N$ = `rl.groups` $\times$ `rl.group_size` per step
+$c_n$ drawn from the training questions, $z_n \sim \mathcal{N}(0, I_{L_a \times V})$, $y^*_n = y^*(c_n)$ the true answer digits
+$\ell = \ell(z_n, c_n)$ the policy logits (rule `rl.option`), $p_{\theta,i} = \mathrm{softmax}(\ell_i / T)$   // gradient through all jumps
+$\mathcal{L}_{sft} = -\frac{1}{N L_a}\sum_{n,i} \log p_{\theta,i}(y^*_{n,i} \mid z_n, c_n)$
+$\theta \leftarrow \mathrm{AdamW}(\nabla_\theta \mathcal{L}_{sft})$, $\eta$ = `train.lr`

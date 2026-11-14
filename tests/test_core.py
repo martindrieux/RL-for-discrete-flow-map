@@ -200,3 +200,16 @@ def test_entropy_bonus_alone_raises_entropy():
     for _ in range(5):
         rl_update(fm, opt, ro, cfg)
     assert token_entropy(policy_logits(fm, ro.z, 2), 1.0).mean() > h0
+
+
+def test_sft_loss_decreases_on_fixed_targets():
+    from rlfm.rl import sft_loss
+    fm = _perturbed_tiny()
+    cfg = RLConfig(K=2)
+    z, y = torch.randn(8, 9, 12), torch.randint(0, 12, (8, 9))
+    opt = torch.optim.Adam(fm.parameters(), lr=1e-3)
+    l0 = sft_loss(fm, z, y, cfg).item()
+    for _ in range(20):
+        loss = sft_loss(fm, z, y, cfg)
+        opt.zero_grad(); loss.backward(); opt.step()
+    assert sft_loss(fm, z, y, cfg).item() < l0

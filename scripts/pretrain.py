@@ -21,11 +21,17 @@ def main():
     task, reward_mod = make_task(cfg)
     V, L = task.vocab_size, task.seq_len
     fm = make_flowmap(cfg, V, L, task).to(device)
+    init_ck = None
+    if cfg.get("init"):  # resume from a pretraining checkpoint (weights and their EMA), with this config's optimizer
+        init_ck = torch.load(cfg["init"], map_location=device, weights_only=False)
+        fm.load_state_dict(init_ck["model"])
     conditional = cond_mode(cfg) != "none"
     tr = cfg["train"]
     opt = torch.optim.AdamW(fm.net.parameters(), lr=tr["lr"], weight_decay=tr.get("weight_decay", 0.0))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda k: min(1.0, (k + 1) / tr["warmup"]))
     ema = EMA(fm, tr["ema"])
+    if init_ck is not None:
+        ema.model.load_state_dict(init_ck["ema"])
     out = cfg["out_dir"]
     os.makedirs(out, exist_ok=True)
     trk = cfg.get("track", {})

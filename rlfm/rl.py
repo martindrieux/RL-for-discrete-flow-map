@@ -117,6 +117,14 @@ def rwr_loss(fm: FlowMap, z: torch.Tensor, y: torch.Tensor, A: torch.Tensor, K: 
     return -(A * logp).mean()
 
 
+@nb.core
+def sft_loss(fm: FlowMap, z: torch.Tensor, y_star: torch.Tensor, cfg: RLConfig, q: torch.Tensor | None = None) -> torch.Tensor:
+    """Supervised fine-tuning of the same policy: -mean_{n,i} log p_{theta,i}(y*_{n,i} | z_n, c_n), the true answer y*
+    as target of the policy's logits (gradient through all jumps): an upper bound for what a reward can teach."""
+    logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q)
+    return -token_logp(logits, y_star, cfg.temp).mean()
+
+
 def _logits_to_one(fm: FlowMap, xs: torch.Tensor, g: torch.Tensor, q: torch.Tensor | None) -> torch.Tensor:
     """l_{t_k, 1}(x_k) for stored states xs [B, J, L, V] at times g[0..J-1]."""
     B, J, L, V = xs.shape

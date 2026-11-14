@@ -10,7 +10,7 @@ import torch
 
 from rlfm.common import cond_mode, load_config, load_flowmap, make_task, require_holdout, task_metrics
 from rlfm.policy import chain_logits, policy_logits, sample_tokens, stochastic_chain, token_entropy, token_kl
-from rlfm.rl import RLConfig, collect, rl_update
+from rlfm.rl import RLConfig, collect, rl_update, sft_loss
 from rlfm.tracking import Run
 
 
@@ -115,11 +115,26 @@ def main():
             return evaluate(fm, ref, task, reward_mod, rc, z_eval, ev["seed"])
     run.log(0, **do_eval())
     t0 = time.time()
+    sft = cfg_all.get("sft", False)  # supervised fine-tuning on the true answers instead of RL (same policy, same budget)
+    if sft and not conditional:
+        raise ValueError("sft needs a conditional model (the true answer comes from the question)")
     for step in range(1, tr["steps"] + 1):
-        ro = collect(fm, ref, reward_fn, rc, L, V, device, question_fn=question_fn)
-        diag = rl_update(fm, opt, ro, rc, tr.get("grad_clip", 1.0))
-        if step % tr["log_every"] == 0:
-            run.log(step, reward_train=ro.reward.mean().item(), sec=time.time() - t0, **diag)
+        if sft:
+            N = rc.groups * rc.group_size
+            q = task.sample_questions(N, heldout=False).to(device)
+            z = torch.randn(N, L, V, device=device)
+            loss = sft_loss(fm, z, task.true_answer(q), rc, q)
+            opt.zero_grad(set_to_none=True)
+            loss.backward()
+            gn = torch.nn.utils.clip_grad_norm_(fm.parameters(), tr.get("grad_clip", 1.0))
+            opt.step()
+            if step % tr["log_every"] == 0:
+                run.log(step, sft_loss=loss.item(), grad_norm=gn.item(), sec=time.time() - t0)
+        else:
+            ro = collect(fm, ref, reward_fn, rc, L, V, device, question_fn=question_fn)
+            diag = rl_update(fm, opt, ro, rc, tr.get("grad_clip", 1.0))
+            if step % tr["log_every"] == 0:
+                run.log(step, reward_train=ro.reward.mean().item(), sec=time.time() - t0, **diag)
         if step % ev["every"] == 0 or step == tr["steps"]:
             m = do_eval()
             run.log(step, **m)
