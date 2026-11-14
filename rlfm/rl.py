@@ -26,6 +26,7 @@ class RLConfig:
     beta: float = 0.0          # KL weight
     stochastic: bool = False   # every jump samples tokens (option A); the policy is the chain of K categoricals
     rwr: float = 0.0           # lambda: weight of reward-weighted regression on the intermediate predictions l_{t_k,1}(x_k)
+    entropy: float = 0.0       # alpha: weight of the entropy bonus -alpha * mean_i H(p_{theta,i}) (all jumps if stochastic)
 
 
 @dataclass
@@ -134,18 +135,20 @@ def rl_update(fm: FlowMap, opt: torch.optim.Optimizer, ro: Rollout, cfg: RLConfi
             logp = token_logp(logits, ro.ys, cfg.temp).reshape(N, K * L)
             Ak = A[:, None].expand(N, K * L) if A.dim() == 1 else A.repeat(1, K)
             loss = pg_loss(logp, ro.logp_old.reshape(N, K * L), Ak, cfg.clip)
+            ent = token_entropy(logits, cfg.temp).mean()
             logits = logits[:, -1]
         else:
             logits = policy_logits(fm, ro.z, cfg.K, cfg.option, cfg.tau_star, ro.q)
             logp = token_logp(logits, ro.y, cfg.temp)
             loss = pg_loss(logp, ro.logp_old, A, cfg.clip)
+            ent = token_entropy(logits, cfg.temp).mean()
         if cfg.rwr > 0:
             loss = loss + cfg.rwr * rwr_loss(fm, ro.z, ro.y, A, cfg.K, cfg.temp, ro.q)
         kl = token_kl(logits, ro.logits_ref, cfg.temp).mean() if ro.logits_ref is not None else torch.zeros((), device=logits.device)
-        total = loss + cfg.beta * kl
+        total = loss + cfg.beta * kl - cfg.entropy * ent
         opt.zero_grad(set_to_none=True)
         total.backward()
         gn = torch.nn.utils.clip_grad_norm_(fm.parameters(), grad_clip)
         opt.step()
     return {"pg_loss": loss.item(), "kl_train": kl.item(), "grad_norm": gn.item(),
-            "entropy_train": token_entropy(logits.detach(), cfg.temp).mean().item()}
+            "entropy_train": ent.item()}

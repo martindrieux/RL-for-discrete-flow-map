@@ -214,6 +214,7 @@
    "rl.clip": "$\\epsilon_c$: ratio clipping; null = no clipping",
    "rl.stochastic": "every jump samples tokens: $x_{k+1} = \\frac{1-t_{k+1}}{1-t_k} x_k + \\frac{t_{k+1}-t_k}{1-t_k} \\mathrm{onehot}(\\hat y_k)$, $\\hat y_k \\sim \\mathrm{Cat}(\\mathrm{softmax}(\\ell_{t_k,t_{k+1}}(x_k)/T))$; the policy is the chain of $K$ categoricals",
    "rl.rwr": "$\\lambda$: weight of $\\mathcal{L}_{rwr}$, the final answer $y$ as target of $\\mathrm{softmax}(\\ell_{t_k,1}(x_k)/T)$ for $k < K-1$, weighted by $A$",
+   "rl.entropy": "$\\alpha$: weight of the entropy bonus $-\\alpha \\frac{1}{GL}\\sum_{g,i} H(p_{\\theta,i})$, $H(p) = -\\sum_v p_v \\log p_v$; pushes the policy to spread its probability and explore",
    "rl.beta": "$\\beta$: weight of the KL to the pretrained policy",
    "track.nb": "record on the tracker",
    "track.subproject": "tracker subproject",

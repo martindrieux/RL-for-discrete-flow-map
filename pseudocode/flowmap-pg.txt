@@ -21,7 +21,8 @@ repeat $\mu$ = `rl.mu` times:
     $\mathcal{L}_{KL} = \frac{1}{GL}\sum_{g,i} KL(p_{\theta,i}(\cdot \mid z_g) \Vert p_{ref,i}(\cdot \mid z_g))$   // $p_{ref}$: frozen pretrained policy from the same $z_g$
     if `rl.stochastic`: $\mathcal{L}_{pg}$ sums over the tokens $\hat y_{g,k,i}$ of all jumps with $A_{g,i}$, divided by $GKL$
     $\mathcal{L}_{rwr} = -\frac{1}{G(K-1)L}\sum_{g,k<K-1,i} sg(A_{g,i}) \log \mathrm{softmax}(\ell_{t_k,1}(x_k)_i / T)(y_{g,i})$   // deterministic states $x_k$, given
-    $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \lambda \mathcal{L}_{rwr} + \beta \mathcal{L}_{KL}))$, $\lambda$ = `rl.rwr`, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
+    $\mathcal{H} = \frac{1}{GL}\sum_{g,i} H(p_{\theta,i}(\cdot \mid z_g))$, $H(p) = -\sum_v p_v \log p_v$   // if `rl.stochastic`: mean over the logits of all $K$ jumps
+    $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \lambda \mathcal{L}_{rwr} + \beta \mathcal{L}_{KL} - \alpha \mathcal{H}))$, $\lambda$ = `rl.rwr`, $\beta$ = `rl.beta`, $\alpha$ = `rl.entropy`, $\eta$ = `train.lr`
 
 == Conditional version (when the pretrained model has `cond.mode`)
 each group shares one question $c_b$ drawn from the training questions; $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer

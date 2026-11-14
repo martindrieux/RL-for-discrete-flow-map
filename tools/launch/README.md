@@ -13,3 +13,6 @@ reward, the per-digit reward and one advantage per digit. `launch_chain*.sh` sta
 On the Babel SLURM cluster, `babel_rl.sbatch` runs any of these scripts in the foreground (it replaces the tmux call):
 
     sbatch -J <name> tools/launch/babel_rl.sbatch tools/launch/launch_chain_T.sh stoch 4 2
+
+`launch_explore.sh` (args: variant (det|stoch), jumps, entropy weight alpha, answers per question G, default 8) tests
+exploration from the 200k checkpoint, always with 256 answers per step.

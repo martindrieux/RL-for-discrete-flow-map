@@ -177,10 +177,26 @@ def test_stochastic_and_rwr_updates_run():
     fm = _perturbed_tiny()
     for cfg in (RLConfig(K=3, groups=2, group_size=4, stochastic=True),
                 RLConfig(K=3, groups=2, group_size=4, stochastic=True, mu=2, clip=0.2),
-                RLConfig(K=3, groups=2, group_size=4, rwr=1.0)):
+                RLConfig(K=3, groups=2, group_size=4, rwr=1.0),
+                RLConfig(K=3, groups=2, group_size=4, entropy=0.1),
+                RLConfig(K=3, groups=2, group_size=4, stochastic=True, entropy=0.1)):
         ro = collect(fm, None, lambda y: (y == 3).float(), cfg, 9, 12, "cpu")  # per-token reward [N, L]
         assert ro.reward.shape == (8, 9)
         before = [p.clone() for p in fm.parameters()]
         d = rl_update(fm, torch.optim.SGD(fm.parameters(), lr=1e-2), ro, cfg)
         assert all(v == v for v in d.values())
         assert any(not torch.equal(a, b) for a, b in zip(before, fm.parameters()))
+
+
+def test_entropy_bonus_alone_raises_entropy():
+    """With zero advantages, the update is the entropy bonus alone: entropy of the policy goes up."""
+    from rlfm.policy import policy_logits, token_entropy
+    from rlfm.rl import collect
+    fm = _perturbed_tiny()
+    cfg = RLConfig(K=2, groups=2, group_size=4, entropy=1.0)
+    ro = collect(fm, None, lambda y: torch.zeros(y.shape[0]), cfg, 9, 12, "cpu")
+    h0 = token_entropy(policy_logits(fm, ro.z, 2), 1.0).mean()
+    opt = torch.optim.SGD(fm.parameters(), lr=1e-1)
+    for _ in range(5):
+        rl_update(fm, opt, ro, cfg)
+    assert token_entropy(policy_logits(fm, ro.z, 2), 1.0).mean() > h0
