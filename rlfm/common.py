@@ -7,9 +7,11 @@ import torch.nn.functional as F
 import yaml
 
 from .data.arithmetic import ArithmeticTask
+from .data.countdown import CountdownTask
 from .flowmap import FlowMap, sample
 from .model import CondDiT, DiT
 from .rewards import arithmetic as arith_reward
+from .rewards import countdown as countdown_reward
 from .timewarp import TimeWarp
 
 
@@ -43,6 +45,11 @@ def make_task(cfg: dict):
                               holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0),
                               op=tc.get("op", "add"))
         return task, arith_reward
+    if cfg["task"]["name"] == "countdown":
+        tc = cfg["task"]
+        task = CountdownTask(holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0),
+                             max_num=tc.get("max_num", 99), max_target=tc.get("max_target", 999))
+        return task, countdown_reward
     raise ValueError(cfg["task"]["name"])
 
 
@@ -140,6 +147,7 @@ def eval_conditional(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed:
             y = sample(fm, z, K, q).argmax(-1)
             s = task.decode(torch.cat([q, y], 1).cpu())
             out[f"K{K}_{split_name}_correct"] = reward_mod.correct(s).float().mean().item()
-            out[f"K{K}_{split_name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
+            if hasattr(task, "true_answer"):  # tasks with a unique answer
+                out[f"K{K}_{split_name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
             out[f"K{K}_{split_name}_wellformed"] = reward_mod.well_formed(s).float().mean().item()
     return out

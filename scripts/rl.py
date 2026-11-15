@@ -50,7 +50,10 @@ def evaluate_conditional(fm, ref, task, reward_mod, cfg: RLConfig, evalset: dict
         for dec, y in decs:
             s = task.decode(torch.cat([q, y], 1).cpu())
             m[f"{dec}_{name}_correct"] = reward_mod.correct(s).float().mean().item()
-            m[f"{dec}_{name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
+            if hasattr(task, "true_answer"):
+                m[f"{dec}_{name}_digit_acc"] = (y == task.true_answer(q)).float().mean().item()
+            else:
+                m[f"{dec}_{name}_wellformed"] = reward_mod.well_formed(s).float().mean().item()
         if name == "train":
             m["entropy"] = token_entropy(logits, cfg.temp).mean().item()
             m["kl_ref"] = token_kl(logits, logits_ref, cfg.temp).flatten(1).sum(-1).mean().item()
@@ -121,9 +124,14 @@ def main():
     for step in range(1, tr["steps"] + 1):
         if sft:
             N = rc.groups * rc.group_size
-            q = task.sample_questions(N, heldout=False).to(device)
+            if hasattr(task, "true_answer"):
+                q = task.sample_questions(N, heldout=False).to(device)
+                y_star = task.true_answer(q)
+            else:  # several valid answers: the pretraining pairs (question, one valid answer)
+                ids = task.sample(N).to(device)
+                q, y_star = ids[:, :task.prompt_len], ids[:, task.prompt_len:]
             z = torch.randn(N, L, V, device=device)
-            loss = sft_loss(fm, z, task.true_answer(q), rc, q)
+            loss = sft_loss(fm, z, y_star, rc, q)
             opt.zero_grad(set_to_none=True)
             loss.backward()
             gn = torch.nn.utils.clip_grad_norm_(fm.parameters(), tr.get("grad_clip", 1.0))
