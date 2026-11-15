@@ -121,6 +121,9 @@ def main():
             run.log(step, **m)
             torch.save({"cfg": cfg, "pre_cfg": pre_cfg, "step": step, "ema": eval_net().state_dict(),
                         "model": net.state_dict()}, os.path.join(out, "last.pt"))
+            if cfg.get("keep_ckpts"):  # one file per evaluation, to start RL from a chosen accuracy
+                torch.save({"cfg": cfg, "pre_cfg": pre_cfg, "step": step, "ema": eval_net().state_dict(),
+                            "model": net.state_dict()}, os.path.join(out, f"ckpt_{step}.pt"))
     run.finish(**m)
 
 

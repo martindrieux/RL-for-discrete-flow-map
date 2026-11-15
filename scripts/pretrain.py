@@ -61,6 +61,8 @@ def main():
             run.log(step, **m)
             ck = {"cfg": cfg, "step": step, "ema": ema.model.state_dict(), "model": fm.state_dict()}
             torch.save(ck, os.path.join(out, "last.pt"))
+            if cfg.get("keep_ckpts"):  # one file per evaluation, to start RL from a chosen accuracy
+                torch.save(ck, os.path.join(out, f"ckpt_{step}.pt"))
             score = m["K1_train_correct"] if conditional else m["K1_wellformed"]
             if score > best:
                 best = score
