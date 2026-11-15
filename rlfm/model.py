@@ -41,9 +41,9 @@ def rope(x: torch.Tensor) -> torch.Tensor:
 class Block(nn.Module):
     """Pre-norm transformer block with AdaLN-zero modulation."""
 
-    def __init__(self, d: int, heads: int, mlp_ratio: int = 4):
+    def __init__(self, d: int, heads: int, mlp_ratio: int = 4, causal: bool = False):
         super().__init__()
-        self.heads = heads
+        self.heads, self.causal = heads, causal
         self.norm1 = nn.LayerNorm(d, elementwise_affine=False)
         self.qkv = nn.Linear(d, 3 * d)
         self.proj = nn.Linear(d, d)
@@ -58,7 +58,7 @@ class Block(nn.Module):
         sh1, sc1, g1, sh2, sc2, g2 = self.ada(c)[:, None, :].chunk(6, dim=-1)
         a = self.norm1(h) * (1 + sc1) + sh1
         q, k, v = self.qkv(a).view(B, L, 3, self.heads, d // self.heads).permute(2, 0, 3, 1, 4)
-        a = F.scaled_dot_product_attention(rope(q), rope(k), v)
+        a = F.scaled_dot_product_attention(rope(q), rope(k), v, is_causal=self.causal)
         h = h + g1 * self.proj(a.transpose(1, 2).reshape(B, L, d))
         m = self.norm2(h) * (1 + sc2) + sh2
         return h + g2 * self.mlp(m)

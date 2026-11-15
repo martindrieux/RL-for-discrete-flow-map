@@ -1,0 +1,5 @@
+== Autoregressive pretraining (baseline)
+input: pairs (question $c$, answer $y \in \{1..V\}^{L_a}$) from the task, $B$ = `train.batch_size`
+causal transformer $f_\theta$ on $[c; y_{<i}]$, same blocks and width as the flow map's network
+$\mathcal{L}_{ar} = -\frac{1}{B L_a}\sum_{b,i} \log \mathrm{softmax}(f_\theta(c_b, y_{b,<i})_i)(y_{b,i})$
+$\theta \leftarrow \mathrm{AdamW}(\nabla_\theta \mathcal{L}_{ar})$, $\eta$ = `train.lr`, EMA of $\theta$ for evaluation

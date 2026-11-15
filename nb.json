@@ -178,7 +178,9 @@
   "algos": {
    "fmlm-direct": "$\\mathcal{L} = -x_1 \\cdot \\log\\hat\\delta_{t,t}(I_t) - \\bar\\delta \\cdot \\log \\hat\\delta_{s,t}(I_s)$, $\\bar\\delta = sg(\\gamma\\hat\\delta_{s,u}(I_s) + (1-\\gamma)\\hat\\delta_{u,t}(\\hat X_{s,u}(I_s)))$, times uniform in $\\tau$",
    "flowmap-pg": "$\\mathcal{L}(\\theta) = -\\frac{1}{GL}\\sum_{g,i} \\min(\\rho_{g,i} A_g, \\mathrm{clip}(\\rho_{g,i}) A_g) + \\beta KL$, $\\rho_{g,i} = p_{\\theta,i}(y_{g,i}\\mid z_g)/p_{old,i}(y_{g,i}\\mid z_g)$",
-   "flowmap-sft": "$\\mathcal{L}_{sft} = -\\frac{1}{N L_a}\\sum_{n,i} \\log p_{\\theta,i}(y^*_{n,i} \\mid z_n, c_n)$: the true answer as target of the RL policy, same budget as RL"
+   "flowmap-sft": "$\\mathcal{L}_{sft} = -\\frac{1}{N L_a}\\sum_{n,i} \\log p_{\\theta,i}(y^*_{n,i} \\mid z_n, c_n)$: the true answer as target of the RL policy, same budget as RL",
+   "ar-ce": "autoregressive baseline: $\\mathcal{L}_{ar} = -\\frac{1}{B L_a}\\sum_{b,i} \\log \\mathrm{softmax}(f_\\theta(c_b, y_{b,<i})_i)(y_{b,i})$, causal transformer of the same size",
+   "ar-pg": "autoregressive baseline RL: $\\mathcal{L}_{pg} = -\\frac{1}{G L_a}\\sum_{g,i} sg(A_g) \\log \\pi_\\theta(y_{g,i} \\mid c, y_{g,<i})$, same advantages and rewards as flowmap-pg"
   },
   "params": {
    "seed": "random seed",
@@ -217,6 +219,7 @@
    "rl.rwr": "$\\lambda$: weight of $\\mathcal{L}_{rwr}$, the final answer $y$ as target of $\\mathrm{softmax}(\\ell_{t_k,1}(x_k)/T)$ for $k < K-1$, weighted by $A$",
    "rl.entropy": "$\\alpha$: weight of the entropy bonus $-\\alpha \\frac{1}{GL}\\sum_{g,i} H(p_{\\theta,i})$, $H(p) = -\\sum_v p_v \\log p_v$; pushes the policy to spread its probability and explore",
    "sft": "true: supervised fine-tuning $\\mathcal{L}_{sft}$ on the true answers instead of RL (algorithm flowmap-sft)",
+   "mode": "autoregressive baseline: pretrain ($\\mathcal{L}_{ar}$ from scratch or resumed), sft ($\\mathcal{L}_{ar}$ on the task pairs from a checkpoint) or rl ($\\mathcal{L}_{pg}$)",
    "rl.beta": "$\\beta$: weight of the KL to the pretrained policy",
    "track.nb": "record on the tracker",
    "track.subproject": "tracker subproject",

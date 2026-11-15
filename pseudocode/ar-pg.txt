@@ -1,0 +1,7 @@
+== Autoregressive RL (baseline)
+input: $B$ = `rl.groups` training questions, each repeated $G$ = `rl.group_size` times, $T$ = `rl.temp`
+for $i = 1..L_a$: $y_{g,i} \sim \mathrm{softmax}(f_\theta(c, y_{g,<i})_i / T)$
+$r_g$ by the rule `reward` (exact: $r_g = \mathrm{correct}(c, y_g)$; per_digit: $r_{g,i} = \mathbb{1}[y_{g,i} = y^*_i(c)]$)
+$A_g = r_g - \frac{1}{G-1}\sum_{j \ne g} r_j$   // per digit when the reward is per digit
+$\mathcal{L}_{pg} = -\frac{1}{G L_a}\sum_{g,i} sg(A_g) \log \mathrm{softmax}(f_\theta(c, y_{g,<i})_i / T)(y_{g,i})$
+$\theta \leftarrow \mathrm{AdamW}(\nabla_\theta \mathcal{L}_{pg})$, $\eta$ = `train.lr`
