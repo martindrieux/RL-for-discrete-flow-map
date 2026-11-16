@@ -234,7 +234,12 @@
    "cond.mode": "none: unconditional; state: question as clean one-hot rows $\\mathrm{onehot}(c)E$; encoder: question read by a separate encoder",
    "cond.enc_depth": "number of encoder blocks (mode encoder)",
    "allow_no_holdout": "debugging only: allow a run without a held-out set",
-   "task.op": "operation: add ($c = a + b$, $n + 1$ answer digits) or mul ($c = a \\times b$, $2n$ answer digits)"
+   "task.op": "operation: add ($c = a + b$, $n + 1$ answer digits) or mul ($c = a \\times b$, $2n$ answer digits)",
+   "task.n_train": "Sudoku: number of solved grids in the training pool (seeds $0, \\dots, n-1$)",
+   "task.n_heldout": "Sudoku: number of held-out solved grids (separate seeds, never trained on)",
+   "task.min_blanks": "Sudoku: blanks per puzzle $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(b_{max}, |R|)\\}$, $b_{min}$ = this, $R$ = cells that can be blanked with a unique solution",
+   "task.max_blanks": "Sudoku: $b_{max}$ in $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(b_{max}, |R|)\\}$ ($|R| \\approx 55$ to $59$)",
+   "keep_ckpts": "save a checkpoint at every evaluation (to start RL from a chosen accuracy)"
   },
   "symbols": {
    "\\eta": "learning rate",

@@ -8,10 +8,12 @@ import yaml
 
 from .data.arithmetic import ArithmeticTask
 from .data.countdown import CountdownTask
+from .data.sudoku import SudokuTask
 from .flowmap import FlowMap, sample
 from .model import CondDiT, DiT
 from .rewards import arithmetic as arith_reward
 from .rewards import countdown as countdown_reward
+from .rewards import sudoku as sudoku_reward
 from .timewarp import TimeWarp
 
 
@@ -50,12 +52,18 @@ def make_task(cfg: dict):
         task = CountdownTask(holdout_frac=tc.get("holdout_frac", 0.0), holdout_seed=tc.get("holdout_seed", 0),
                              max_num=tc.get("max_num", 99), max_target=tc.get("max_target", 999))
         return task, countdown_reward
+    if cfg["task"]["name"] == "sudoku":
+        tc = cfg["task"]
+        task = SudokuTask(n_train=tc.get("n_train", 50_000), n_heldout=tc.get("n_heldout", 1000),
+                          min_blanks=tc.get("min_blanks", 30), max_blanks=tc.get("max_blanks", 81))
+        return task, sudoku_reward
     raise ValueError(cfg["task"]["name"])
 
 
 def require_holdout(cfg: dict, allow: bool, what: str) -> None:
     """Every experiment keeps a held-out set; refuse to run without one unless explicitly allowed."""
-    if cfg["task"].get("holdout_frac", 0.0) <= 0 and not allow:
+    tc = cfg["task"]
+    if tc.get("holdout_frac", 0.0) <= 0 and tc.get("n_heldout", 1000 if tc["name"] == "sudoku" else 0) <= 0 and not allow:
         raise SystemExit(f"{what}: task.holdout_frac must be > 0 (a held-out set is required). "
                          "Pass allow_no_holdout=true only for debugging.")
 

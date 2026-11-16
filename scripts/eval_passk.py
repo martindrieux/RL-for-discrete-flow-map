@@ -1,9 +1,9 @@
-"""Does RL find new solutions or sharpen the pretrained distribution? pass@k on held-out Countdown questions.
+"""Does RL find new solutions or sharpen the pretrained distribution? pass@k on held-out Countdown or Sudoku questions.
 
 For n held-out questions, S answers are sampled per question (flow map: z ~ N(0, I), option A with K jumps, T = 1;
 autoregressive: ancestral sampling at T = 1). With c correct answers out of S, the unbiased estimate is
 pass@k = 1 - C(S - c, k) / C(S, k). Also reported: mean number of distinct correct answer strings per question
-(and of distinct canonical expressions, see canonical), and
+(Countdown: also distinct canonical expressions, see canonical; Sudoku: pass@1 by number of blanks), and
 for the autoregressive model the greedy answer's accuracy.
 
 Mode-seeking decodings, to compare RL with what decoding alone gives: zs=s scales the flow map's noise,
@@ -91,6 +91,7 @@ def main():
     net.eval()
     q_all = task.sample_questions(n, heldout=True, generator=torch.Generator().manual_seed(4321)).to(device)
     gen = torch.Generator(device=device).manual_seed(0)
+    countdown = pre_cfg["task"]["name"] == "countdown"
     counts, distinct, canon, greedy, beamed = [], [], [], [], []
     for i in range(0, n, chunk):
         q = q_all[i:i + chunk]
@@ -112,11 +113,20 @@ def main():
         for j in range(q.shape[0]):
             ok = [s[j * S + t] for t in range(S) if c[j, t]]
             distinct.append(len(set(ok)))
-            canon.append(len({canonical(parse(x)[2], parse(x)[0]) for x in ok}))
+            if countdown:
+                canon.append(len({canonical(parse(x)[2], parse(x)[0]) for x in ok}))
     ks = [k for k in (1, 2, 4, 8, 16, 32, 64) if k <= S]
     out = {"kind": kind, "ckpt": path, "K": K if kind == "fm" else None, "n": n, "S": S, "zs": zs, "T": T,
            **{f"pass@{k}": sum(pass_at_k(c, S, k) for c in counts) / n for k in ks},
-           "distinct_correct": sum(distinct) / n, "distinct_canonical": sum(canon) / n}
+           "distinct_correct": sum(distinct) / n}
+    if countdown:
+        out["distinct_canonical"] = sum(canon) / n
+    else:  # Sudoku: pass@1 by number of blanks
+        blanks = (q_all == 0).sum(1).tolist()
+        for lo, hi in ((30, 39), (40, 49), (50, 81)):
+            sel = [c for c, b in zip(counts, blanks) if lo <= b <= hi]
+            if sel:
+                out[f"pass@1_blanks{lo}-{hi}"] = sum(sel) / (S * len(sel))
     if greedy:
         out["greedy"] = sum(greedy) / n
     if beamed:
