@@ -60,13 +60,17 @@ def main():
     net = build(pre_cfg, task).to(device)
     if ck is not None:
         net.load_state_dict(ck["ema"])
+    ck0, start = None, 0
     if mode == "pretrain" and cfg.get("init"):
         ck0 = torch.load(cfg["init"], map_location=device, weights_only=False)
         net.load_state_dict(ck0["model"])
+        start = ck0["step"] if cfg.get("resume") else 0  # resume: steps go on from the checkpoint
     tr = cfg["train"]
     opt = torch.optim.AdamW(net.parameters(), lr=tr["lr"], weight_decay=tr.get("weight_decay", 0.0))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda k: min(1.0, (k + 1) / tr.get("warmup", 1)))
     ema = EMA(net, tr["ema"]) if mode == "pretrain" else None
+    if ck0 is not None and "ema" in ck0:  # the EMA goes on from the checkpoint's EMA, as for the flow map
+        ema.model.load_state_dict(ck0["ema"])
     ref = None
     if mode != "pretrain":
         ref = copy.deepcopy(net).eval()
@@ -88,9 +92,9 @@ def main():
     Lq, La = task.prompt_len, task.answer_len
     every = tr.get("eval_every", ev.get("every", 250))
     eval_net = lambda: ema.model if ema is not None else net
-    run.log(0, **evaluate(eval_net(), ref, task, reward_mod, evalset, temp, ev["seed"]))
+    run.log(start, **evaluate(eval_net(), ref, task, reward_mod, evalset, temp, ev["seed"]))
     t0 = time.time()
-    for step in range(1, tr["steps"] + 1):
+    for step in range(start + 1, tr["steps"] + 1):
         if mode in ("pretrain", "sft"):
             ids = task.sample(tr.get("batch_size", B * G)).to(device)
             loss = -ar_logp(net, ids[:, :Lq], ids[:, Lq:]).mean()
@@ -127,7 +131,7 @@ def main():
             run.log(step, **m)
             torch.save({"cfg": cfg, "pre_cfg": pre_cfg, "step": step, "ema": eval_net().state_dict(),
                         "model": net.state_dict()}, os.path.join(out, "last.pt"))
-            if cfg.get("keep_ckpts"):  # one file per evaluation, to start RL from a chosen accuracy
+            if cfg.get("keep_ckpts") and step % tr.get("ckpt_every", every) == 0:  # to start RL from a chosen accuracy
                 torch.save({"cfg": cfg, "pre_cfg": pre_cfg, "step": step, "ema": eval_net().state_dict(),
                             "model": net.state_dict()}, os.path.join(out, f"ckpt_{step}.pt"))
     run.finish(**m)

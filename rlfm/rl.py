@@ -2,7 +2,7 @@
 
 All losses are means over the G*L tokens of each group (and over groups).
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, replace
 from typing import Callable
 
 import torch
@@ -27,6 +27,7 @@ class RLConfig:
     stochastic: bool = False   # every jump samples tokens (option A); the policy is the chain of K categoricals
     rwr: float = 0.0           # lambda: weight of reward-weighted regression on the intermediate predictions l_{t_k,1}(x_k)
     entropy: float = 0.0       # alpha: weight of the entropy bonus -alpha * mean_i H(p_{theta,i}) (all jumps if stochastic)
+    micro: int = 1             # the batch is cut in `micro` equal slices whose gradients are summed (same step, less memory)
 
 
 @dataclass
@@ -133,30 +134,49 @@ def _logits_to_one(fm: FlowMap, xs: torch.Tensor, g: torch.Tensor, q: torch.Tens
     return fm.logits(xs.reshape(B * J, L, V), s, torch.ones_like(s), qq).float().view(B, J, L, V)
 
 
+def _slice(ro: Rollout, sl: slice) -> Rollout:
+    return replace(ro, **{f.name: None if getattr(ro, f.name) is None else getattr(ro, f.name)[sl] for f in fields(ro)})
+
+
+def _losses(fm: FlowMap, ro: Rollout, A: torch.Tensor, cfg: RLConfig):
+    """(policy-gradient loss incl. rwr, KL to the reference, entropy), each a mean over the samples of ro."""
+    if ro.xs is not None:  # stochastic chain: every jump's tokens get the final advantage
+        N, K, L = ro.ys.shape
+        logits = chain_logits(fm, ro.xs, K, ro.q)
+        logp = token_logp(logits, ro.ys, cfg.temp).reshape(N, K * L)
+        Ak = A[:, None].expand(N, K * L) if A.dim() == 1 else A.repeat(1, K)
+        loss = pg_loss(logp, ro.logp_old.reshape(N, K * L), Ak, cfg.clip)
+        ent = token_entropy(logits, cfg.temp).mean()
+        logits = logits[:, -1]
+    else:
+        logits = policy_logits(fm, ro.z, cfg.K, cfg.option, cfg.tau_star, ro.q)
+        logp = token_logp(logits, ro.y, cfg.temp)
+        loss = pg_loss(logp, ro.logp_old, A, cfg.clip)
+        ent = token_entropy(logits, cfg.temp).mean()
+    if cfg.rwr > 0:
+        loss = loss + cfg.rwr * rwr_loss(fm, ro.z, ro.y, A, cfg.K, cfg.temp, ro.q)
+    kl = token_kl(logits, ro.logits_ref, cfg.temp).mean() if ro.logits_ref is not None else torch.zeros((), device=logits.device)
+    return loss, kl, ent
+
+
 def rl_update(fm: FlowMap, opt: torch.optim.Optimizer, ro: Rollout, cfg: RLConfig, grad_clip: float = 1.0) -> dict:
-    """mu gradient steps on one rollout; returns diagnostics of the last step."""
+    """mu gradient steps on one rollout; returns diagnostics of the last step.
+
+    Each step sums the gradients of cfg.micro equal slices of the batch, each loss divided by cfg.micro: since every
+    loss is a mean over samples, this is the gradient of the whole batch."""
     A = advantages(ro.reward, cfg.group_size, cfg.advantage)
+    N = ro.y.shape[0]
+    assert N % cfg.micro == 0, f"batch {N} not divisible by rl.micro={cfg.micro}"
+    n = N // cfg.micro
     for _ in range(cfg.mu):
-        if ro.xs is not None:  # stochastic chain: every jump's tokens get the final advantage
-            N, K, L = ro.ys.shape
-            logits = chain_logits(fm, ro.xs, K, ro.q)
-            logp = token_logp(logits, ro.ys, cfg.temp).reshape(N, K * L)
-            Ak = A[:, None].expand(N, K * L) if A.dim() == 1 else A.repeat(1, K)
-            loss = pg_loss(logp, ro.logp_old.reshape(N, K * L), Ak, cfg.clip)
-            ent = token_entropy(logits, cfg.temp).mean()
-            logits = logits[:, -1]
-        else:
-            logits = policy_logits(fm, ro.z, cfg.K, cfg.option, cfg.tau_star, ro.q)
-            logp = token_logp(logits, ro.y, cfg.temp)
-            loss = pg_loss(logp, ro.logp_old, A, cfg.clip)
-            ent = token_entropy(logits, cfg.temp).mean()
-        if cfg.rwr > 0:
-            loss = loss + cfg.rwr * rwr_loss(fm, ro.z, ro.y, A, cfg.K, cfg.temp, ro.q)
-        kl = token_kl(logits, ro.logits_ref, cfg.temp).mean() if ro.logits_ref is not None else torch.zeros((), device=logits.device)
-        total = loss + cfg.beta * kl - cfg.entropy * ent
         opt.zero_grad(set_to_none=True)
-        total.backward()
+        tot = torch.zeros(3)
+        for i in range(0, N, n):
+            sl = slice(i, i + n)
+            loss, kl, ent = _losses(fm, _slice(ro, sl), A[sl], cfg)
+            ((loss + cfg.beta * kl - cfg.entropy * ent) / cfg.micro).backward()
+            tot += torch.stack([loss.detach(), kl.detach(), ent.detach()]).float().cpu() / cfg.micro
         gn = torch.nn.utils.clip_grad_norm_(fm.parameters(), grad_clip)
         opt.step()
-    return {"pg_loss": loss.item(), "kl_train": kl.item(), "grad_norm": gn.item(),
-            "entropy_train": ent.item()}
+    return {"pg_loss": tot[0].item(), "kl_train": tot[1].item(), "grad_norm": gn.item(),
+            "entropy_train": tot[2].item()}

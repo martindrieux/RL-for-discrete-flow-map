@@ -218,6 +218,7 @@
    "rl.stochastic": "every jump samples tokens: $x_{k+1} = \\frac{1-t_{k+1}}{1-t_k} x_k + \\frac{t_{k+1}-t_k}{1-t_k} \\mathrm{onehot}(\\hat y_k)$, $\\hat y_k \\sim \\mathrm{Cat}(\\mathrm{softmax}(\\ell_{t_k,t_{k+1}}(x_k)/T))$; the policy is the chain of $K$ categoricals",
    "rl.rwr": "$\\lambda$: weight of $\\mathcal{L}_{rwr}$, the final answer $y$ as target of $\\mathrm{softmax}(\\ell_{t_k,1}(x_k)/T)$ for $k < K-1$, weighted by $A$",
    "rl.entropy": "$\\alpha$: weight of the entropy bonus $-\\alpha \\frac{1}{GL}\\sum_{g,i} H(p_{\\theta,i})$, $H(p) = -\\sum_v p_v \\log p_v$; pushes the policy to spread its probability and explore",
+   "rl.micro": "number of equal slices of the $N = BG$ samples of a step; the step uses $\\nabla_\\theta \\sum_{m} \\frac{1}{M} \\mathcal{L}(\\text{slice } m)$, $M$ = `rl.micro`, the same gradient as the whole batch with $1/M$ of the memory",
    "sft": "true: supervised fine-tuning $\\mathcal{L}_{sft}$ on the true answers instead of RL (algorithm flowmap-sft)",
    "mode": "autoregressive baseline: pretrain ($\\mathcal{L}_{ar}$ from scratch or resumed), sft ($\\mathcal{L}_{ar}$ on the task pairs from a checkpoint) or rl ($\\mathcal{L}_{pg}$)",
    "rl.beta": "$\\beta$: weight of the KL to the pretrained policy",
@@ -239,7 +240,9 @@
    "task.n_heldout": "Sudoku: number of held-out solved grids (separate seeds, never trained on)",
    "task.min_blanks": "Sudoku: blanks per puzzle $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(b_{max}, |R|)\\}$, $b_{min}$ = this, $R$ = cells that can be blanked with a unique solution",
    "task.max_blanks": "Sudoku: $b_{max}$ in $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(b_{max}, |R|)\\}$ ($|R| \\approx 55$ to $59$)",
-   "keep_ckpts": "save a checkpoint at every evaluation (to start RL from a chosen accuracy)"
+   "keep_ckpts": "save a checkpoint every `train.ckpt_every` steps (default: every evaluation), to start RL from a chosen accuracy",
+   "train.ckpt_every": "steps between two checkpoints kept by `keep_ckpts`",
+   "resume": "true: the run goes on from the step stored in `init` (same step numbers, new optimizer with its warmup)"
   },
   "symbols": {
    "\\eta": "learning rate",

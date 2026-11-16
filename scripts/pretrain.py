@@ -25,6 +25,7 @@ def main():
     if cfg.get("init"):  # resume from a pretraining checkpoint (weights and their EMA), with this config's optimizer
         init_ck = torch.load(cfg["init"], map_location=device, weights_only=False)
         fm.load_state_dict(init_ck["model"])
+    start = init_ck["step"] if (init_ck is not None and cfg.get("resume")) else 0  # resume: steps go on from the checkpoint
     conditional = cond_mode(cfg) != "none"
     tr = cfg["train"]
     opt = torch.optim.AdamW(fm.net.parameters(), lr=tr["lr"], weight_decay=tr.get("weight_decay", 0.0))
@@ -39,7 +40,7 @@ def main():
               formula=trk.get("formula"), algo=trk.get("algo"), config=cfg, question=trk.get("question"))
     print(f"params: {sum(p.numel() for p in fm.net.parameters()) / 1e6:.2f}M  V={V} L={L}  device={device}", flush=True)
     t0, best = time.time(), -1.0
-    for step in range(1, tr["steps"] + 1):
+    for step in range(start + 1, tr["steps"] + 1):
         ids = task.sample(tr["batch_size"]).to(device)
         if conditional:
             q, ans = split(ids, task)
@@ -61,7 +62,7 @@ def main():
             run.log(step, **m)
             ck = {"cfg": cfg, "step": step, "ema": ema.model.state_dict(), "model": fm.state_dict()}
             torch.save(ck, os.path.join(out, "last.pt"))
-            if cfg.get("keep_ckpts"):  # one file per evaluation, to start RL from a chosen accuracy
+            if cfg.get("keep_ckpts") and step % tr.get("ckpt_every", tr["eval_every"]) == 0:  # to start RL from a chosen accuracy
                 torch.save(ck, os.path.join(out, f"ckpt_{step}.pt"))
             score = m["K1_train_correct"] if conditional else m["K1_wellformed"]
             if score > best:

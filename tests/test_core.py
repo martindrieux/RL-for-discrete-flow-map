@@ -228,3 +228,24 @@ def test_ar_kl_zero_at_reference_and_positive_after_change():
         net.out.bias += torch.randn_like(net.out.bias)
     kl = ar_kl(net, ref, q, y)
     assert kl.shape == (4, 7) and (kl > 0).all()
+
+
+def test_micro_batches_give_the_same_update():
+    """rl.micro = 2 sums the gradients of two halves of the batch: the same step as the whole batch at once."""
+    import copy
+    from rlfm.rl import collect
+    base = _perturbed_tiny()
+    ref = tiny()
+    for kw in (dict(), dict(mu=2, clip=0.2, beta=0.1), dict(stochastic=True), dict(rwr=1.0), dict(entropy=0.1)):
+        cfg1 = RLConfig(K=3, groups=2, group_size=4, **kw)
+        torch.manual_seed(1)
+        ro = collect(base, ref if cfg1.beta > 0 else None, lambda y: (y == 3).float().mean(1), cfg1, 9, 12, "cpu")
+        out = []
+        for micro in (1, 2):
+            fm = copy.deepcopy(base)
+            cfg = RLConfig(K=3, groups=2, group_size=4, micro=micro, **kw)
+            d = rl_update(fm, torch.optim.SGD(fm.parameters(), lr=1e-1), ro, cfg, grad_clip=1e9)
+            out.append((torch.cat([p.flatten() for p in fm.parameters()]), d))
+        assert torch.allclose(out[0][0], out[1][0], atol=1e-6), kw
+        for k in out[0][1]:
+            assert abs(out[0][1][k] - out[1][1][k]) < 1e-4 * (1 + abs(out[0][1][k])), (kw, k)
