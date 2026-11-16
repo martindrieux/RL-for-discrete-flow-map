@@ -213,3 +213,18 @@ def test_sft_loss_decreases_on_fixed_targets():
         loss = sft_loss(fm, z, y, cfg)
         opt.zero_grad(); loss.backward(); opt.step()
     assert sft_loss(fm, z, y, cfg).item() < l0
+
+
+def test_ar_kl_zero_at_reference_and_positive_after_change():
+    import copy
+    from rlfm.ar import ARNet, ar_kl, ar_sample
+    torch.manual_seed(0)
+    net = ARNet(18, d=32, depth=1, heads=2)
+    ref = copy.deepcopy(net)
+    q = torch.randint(0, 10, (4, 11))
+    y = ar_sample(net, q, 7)
+    assert ar_kl(net, ref, q, y).abs().max().item() < 1e-5
+    with torch.no_grad():
+        net.out.bias += torch.randn_like(net.out.bias)
+    kl = ar_kl(net, ref, q, y)
+    assert kl.shape == (4, 7) and (kl > 0).all()

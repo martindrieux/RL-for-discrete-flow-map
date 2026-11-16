@@ -12,7 +12,7 @@ import time
 import torch
 import torch.nn.functional as F
 
-from rlfm.ar import ARNet, answer_logits, ar_logp, ar_sample
+from rlfm.ar import ARNet, answer_logits, ar_kl, ar_logp, ar_sample
 from rlfm.common import EMA, load_config, make_task, require_holdout
 from rlfm.rl import advantages, pg_loss
 from rlfm.tracking import Run
@@ -105,8 +105,14 @@ def main():
                 r = reward_mod.reward(s).to(device)
             A = advantages(r, G, rl.get("advantage", "loo"))
             logp = ar_logp(net, q, y, temp)
-            loss = pg_loss(logp, logp.detach(), A, None)
-            logs = {"pg_loss": loss, "reward_train": r.mean()}
+            pg = pg_loss(logp, logp.detach(), A, None)
+            logs = {"pg_loss": pg, "reward_train": r.mean()}
+            loss = pg
+            beta = rl.get("beta", 0.0)  # KL to the pretrained policy along the sampled answers, as for the flow map
+            if beta > 0:
+                kl = ar_kl(net, ref, q, y, temp).mean()
+                loss = pg + beta * kl
+                logs["kl_train"] = kl
         opt.zero_grad(set_to_none=True)
         loss.backward()
         gn = torch.nn.utils.clip_grad_norm_(net.parameters(), tr.get("grad_clip", 1.0))

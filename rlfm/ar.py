@@ -42,6 +42,15 @@ def ar_logp(net: ARNet, q: torch.Tensor, y: torch.Tensor, temp: float = 1.0) -> 
     return token_logp(answer_logits(net, q, y), y, temp)
 
 
+@nb.core
+def ar_kl(net: ARNet, ref: ARNet, q: torch.Tensor, y: torch.Tensor, temp: float = 1.0) -> torch.Tensor:
+    """KL(p_theta(. | c, y_<i) || p_ref(. | c, y_<i)) over the vocabulary at each answer position of y, [B, La]."""
+    lp = F.log_softmax(answer_logits(net, q, y) / temp, -1)
+    with torch.no_grad():
+        lr = F.log_softmax(answer_logits(ref, q, y) / temp, -1)
+    return (lp.exp() * (lp - lr)).sum(-1)
+
+
 @torch.no_grad()
 def ar_sample(net: ARNet, q: torch.Tensor, La: int, temp: float = 1.0, greedy: bool = False,
               gen: torch.Generator | None = None) -> torch.Tensor:
