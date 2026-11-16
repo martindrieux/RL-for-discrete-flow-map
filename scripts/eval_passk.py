@@ -6,7 +6,10 @@ pass@k = 1 - C(S - c, k) / C(S, k). Also reported: mean number of distinct corre
 (and of distinct canonical expressions, see canonical), and
 for the autoregressive model the greedy answer's accuracy.
 
-python scripts/eval_passk.py fm runs/ckpt_cd_fm_100k.pt [K=4] [n=500] [S=64]
+Mode-seeking decodings, to compare RL with what decoding alone gives: zs=s scales the flow map's noise,
+z ~ N(0, s^2 I) (s = 0: one deterministic answer per question); T=t is the sampling temperature of both models.
+
+python scripts/eval_passk.py fm runs/ckpt_cd_fm_100k.pt [K=4] [n=500] [S=64] [zs=1] [T=1]
 python scripts/eval_passk.py ar runs/ckpt_cd_ar_100k.pt
 """
 import json
@@ -54,6 +57,7 @@ def main():
     kind, path = sys.argv[1], sys.argv[2]
     kw = dict(a.split("=") for a in sys.argv[3:])
     K, n, S, chunk = int(kw.get("K", 4)), int(kw.get("n", 500)), int(kw.get("S", 64)), int(kw.get("chunk", 50))
+    zs, T = float(kw.get("zs", 1.0)), float(kw.get("T", 1.0))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck = torch.load(path, map_location=device, weights_only=False)
     pre_cfg = ck.get("pre_cfg", ck["cfg"])
@@ -73,10 +77,11 @@ def main():
         q = q_all[i:i + chunk]
         qr = q.repeat_interleave(S, 0)
         if kind == "fm":
-            z = torch.randn(qr.shape[0], La, task.vocab_size, device=device, generator=gen)
-            y = sample_tokens(policy_logits(net, z, K, "A", 0.9, qr), 1.0, gen)
+            z = zs * torch.randn(qr.shape[0], La, task.vocab_size, device=device, generator=gen)
+            logits = policy_logits(net, z, K, "A", 0.9, qr)
+            y = logits.argmax(-1) if T == 0 else sample_tokens(logits, T, gen)
         else:
-            y = ar_sample(net, qr, La, 1.0, gen=gen)
+            y = ar_sample(net, qr, La, T, gen=gen) if T > 0 else ar_sample(net, qr, La, greedy=True)
             yg = ar_sample(net, q, La, greedy=True)
             greedy += rew.correct(task.decode(torch.cat([q, yg], 1).cpu())).tolist()
         s = task.decode(torch.cat([qr, y], 1).cpu())
@@ -87,7 +92,7 @@ def main():
             distinct.append(len(set(ok)))
             canon.append(len({canonical(parse(x)[2], parse(x)[0]) for x in ok}))
     ks = [k for k in (1, 2, 4, 8, 16, 32, 64) if k <= S]
-    out = {"kind": kind, "ckpt": path, "K": K if kind == "fm" else None, "n": n, "S": S,
+    out = {"kind": kind, "ckpt": path, "K": K if kind == "fm" else None, "n": n, "S": S, "zs": zs, "T": T,
            **{f"pass@{k}": sum(pass_at_k(c, S, k) for c in counts) / n for k in ks},
            "distinct_correct": sum(distinct) / n, "distinct_canonical": sum(canon) / n}
     if greedy:
