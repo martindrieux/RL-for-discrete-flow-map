@@ -31,3 +31,16 @@ def test_reward_accepts_any_valid_solution():
     assert R.reward([q + "ABCD+++", q + "DC+B+A+", q + "AB+C+D+"]).tolist() == [1.0, 1.0, 1.0]
     assert R.reward([q + "AB+C*D-"]).tolist() == [0.0]       # = 5
     assert R.well_formed([q + "AB+C*D-", q + "AAAA+++"]).tolist() == [True, False]
+
+
+def test_beam_width_one_is_greedy():
+    import importlib.util, pathlib
+    from rlfm.ar import ARNet, ar_sample
+    spec = importlib.util.spec_from_file_location("eval_passk", pathlib.Path(__file__).parents[1] / "scripts" / "eval_passk.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    torch.manual_seed(0)
+    net = ARNet(18, d=32, depth=1, heads=2).eval()
+    q = torch.randint(0, 10, (5, 11))
+    assert torch.equal(m.ar_beam(net, q, 7, 1), ar_sample(net, q, 7, greedy=True))
+    assert m.ar_beam(net, q, 7, 4).shape == (5, 7)
