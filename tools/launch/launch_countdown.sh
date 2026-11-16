@@ -1,7 +1,7 @@
 # Countdown: RL vs supervised fine-tuning vs continued pretraining, for the flow map and the autoregressive baseline.
 # args: fm|ar  rl|sft|pre  [K] [seed] [steps]
 # optional env: CKPT=<checkpoint> PRE=<pretraining steps of CKPT, for names and titles>
-#               BETA=<KL weight to the pretrained model, flow-map rl only>  LR=<learning rate, default 3e-5>
+#               BETA=<KL weight to the pretrained model, rl only>  LR=<learning rate, default 3e-5>
 cd ~/projects/RL-for-discrete-flow-map
 NET=$1; M=$2; K=${3:-1}
 Q='On Countdown (several valid answers), does RL improve on supervised fine-tuning with one valid answer per question, for the flow map and for an autoregressive transformer of the same size?'
@@ -24,9 +24,9 @@ if [ $NET = fm ]; then
          CMD=".venv/bin/python scripts/pretrain.py configs/countdown_pretrain.yaml init=$CK out_dir=runs/$n train.lr=$LR train.warmup=1 train.steps=$ST train.eval_every=250 eval.Ks=[1,4] seed=$S track.algo=fmlm-direct 'track.title=Flow map, continued pretraining, lr $LR, $TAIL' 'track.formula=direct flow-map loss resumed, \$\\eta = \\cfg{train.lr}\$' $TR";;
   esac
 else
-  n=cd_ar_${M}${LN}_s${S}_n${ST}_pre$PRE
+  n=cd_ar_${M}${BN}${LN}_s${S}_n${ST}_pre$PRE
   case $M in
-    rl)  CMD=".venv/bin/python scripts/ar.py configs/arith_rl.yaml init=$CK out_dir=runs/$n mode=rl reward=exact track.algo=ar-pg 'track.title=Autoregressive, RL$LT, $TAIL' 'track.formula=\$r = \\mathbb{1}[e(n) = v]\$, same advantages as the flow map' $COMMON";;
+    rl)  CMD=".venv/bin/python scripts/ar.py configs/arith_rl.yaml init=$CK out_dir=runs/$n mode=rl reward=exact $B track.algo=ar-pg 'track.title=Autoregressive, RL$BT$LT, $TAIL' 'track.formula=\$r = \\mathbb{1}[e(n) = v]\$, same advantages as the flow map, \$\\beta = \\cfg{rl.beta}\$' $COMMON";;
     sft) CMD=".venv/bin/python scripts/ar.py configs/arith_rl.yaml init=$CK out_dir=runs/$n mode=sft train.batch_size=256 track.algo=ar-ce 'track.title=Autoregressive, supervised fine-tuning$LT, $TAIL' 'track.formula=\$\\mathcal{L}_{ar}\$ on the generating expression' $COMMON";;
     pre) CMD=".venv/bin/python scripts/ar.py configs/countdown_pretrain.yaml init=$CK out_dir=runs/$n mode=pretrain train.lr=$LR train.warmup=1 train.steps=$ST train.eval_every=250 seed=$S track.algo=ar-ce 'track.title=Autoregressive, continued pretraining, lr $LR, $TAIL' 'track.formula=\$\\mathcal{L}_{ar}\$ resumed, \$\\eta = \\cfg{train.lr}\$' $TR";;
   esac
