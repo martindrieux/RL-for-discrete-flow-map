@@ -28,6 +28,7 @@ class RLConfig:
     rwr: float = 0.0           # lambda: weight of reward-weighted regression on the intermediate predictions l_{t_k,1}(x_k)
     entropy: float = 0.0       # alpha: weight of the entropy bonus -alpha * mean_i H(p_{theta,i}) (all jumps if stochastic)
     micro: int = 1             # the batch is cut in `micro` equal slices whose gradients are summed (same step, less memory)
+    zs: float = 1.0            # s: noise scale of the rollouts, z ~ N(0, s^2 I); the best decoding of Sudoku uses s = 0
 
 
 @dataclass
@@ -53,7 +54,7 @@ def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable, cfg: RLConfig
     """
     N = cfg.groups * cfg.group_size
     q = None if question_fn is None else question_fn(cfg.groups).to(device).repeat_interleave(cfg.group_size, 0)
-    z = torch.randn(N, L, V, generator=gen, device=device)
+    z = cfg.zs * torch.randn(N, L, V, generator=gen, device=device)
     if cfg.stochastic:
         assert cfg.option == "A" and cfg.beta == 0, "stochastic chain: option A, no KL penalty"
         xs, ys, logits = stochastic_chain(fm, z, cfg.K, cfg.temp, q, gen)

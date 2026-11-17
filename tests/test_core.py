@@ -249,3 +249,16 @@ def test_micro_batches_give_the_same_update():
         assert torch.allclose(out[0][0], out[1][0], atol=1e-6), kw
         for k in out[0][1]:
             assert abs(out[0][1][k] - out[1][1][k]) < 1e-4 * (1 + abs(out[0][1][k])), (kw, k)
+
+
+def test_noise_scale_of_rollouts():
+    """rl.zs = s draws z ~ N(0, s^2 I): s = 0 gives z = 0, s = 0.5 halves the noise of the same generator."""
+    from rlfm.rl import collect
+    fm = _perturbed_tiny()
+    zs = {}
+    for s in (0.0, 0.5, 1.0):
+        cfg = RLConfig(K=2, groups=2, group_size=4, zs=s)
+        zs[s] = collect(fm, None, lambda y: torch.zeros(y.shape[0]), cfg, 9, 12, "cpu",
+                        gen=torch.Generator().manual_seed(0)).z
+    assert torch.all(zs[0.0] == 0)
+    assert torch.allclose(zs[0.5], 0.5 * zs[1.0])

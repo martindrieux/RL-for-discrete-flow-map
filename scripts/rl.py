@@ -32,6 +32,7 @@ def evaluate(fm, ref, task, reward_mod, cfg: RLConfig, z: torch.Tensor, seed: in
 def evaluate_conditional(fm, ref, task, reward_mod, cfg: RLConfig, evalset: dict, seed: int) -> dict:
     """Fixed training and held-out questions with fixed noises: correct answers when sampling at T and with argmax.
 
+    "zero" is the argmax answer from the noise z = 0, the mode-seeking decoding.
     Stochastic chain: "sample" samples at every jump, "argmax" takes the argmax at every jump, "det" is the argmax of
     the deterministic flow map's last jump; entropy and KL are over the tokens of all jumps of the sampled chain.
     """
@@ -46,7 +47,8 @@ def evaluate_conditional(fm, ref, task, reward_mod, cfg: RLConfig, evalset: dict
         else:
             logits = policy_logits(fm, z, cfg.K, cfg.option, cfg.tau_star, q)
             logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star, q)
-            decs = (("sample", sample_tokens(logits, cfg.temp, g)), ("argmax", logits.argmax(-1)))
+            decs = (("sample", sample_tokens(logits, cfg.temp, g)), ("argmax", logits.argmax(-1)),
+                    ("zero", policy_logits(fm, torch.zeros_like(z), cfg.K, cfg.option, cfg.tau_star, q).argmax(-1)))
         for dec, y in decs:
             s = task.decode(torch.cat([q, y], 1).cpu())
             m[f"{dec}_{name}_correct"] = reward_mod.correct(s).float().mean().item()

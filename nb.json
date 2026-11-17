@@ -172,6 +172,14 @@
    "kind": "curve",
    "metric": "sample_heldout_digit_acc",
    "better": "higher"
+  },
+  {
+   "title": "Correct answers (RL), held-out questions, zero noise",
+   "label": "Correct, held-out questions, $z = 0$",
+   "shows": "fraction of 1000 held-out questions whose answer $\\arg\\max_v p_{\\theta,i}(v \\mid z = 0)$ is correct (mode-seeking decoding, RL evaluation)",
+   "kind": "curve",
+   "metric": "zero_heldout_correct",
+   "better": "higher"
   }
  ],
  "glossary": {
@@ -242,7 +250,8 @@
    "task.max_blanks": "Sudoku: $b_{max}$ in $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(b_{max}, |R|)\\}$ ($|R| \\approx 55$ to $59$)",
    "keep_ckpts": "save a checkpoint every `train.ckpt_every` steps (default: every evaluation), to start RL from a chosen accuracy",
    "train.ckpt_every": "steps between two checkpoints kept by `keep_ckpts`",
-   "resume": "true: the run goes on from the step stored in `init` (same step numbers, new optimizer with its warmup)"
+   "resume": "true: the run goes on from the step stored in `init` (same step numbers, new optimizer with its warmup)",
+   "rl.zs": "$s$: noise scale of the RL rollouts, $z \\sim \\mathcal{N}(0, s^2 I)$; $s = 1$ is the pretraining noise, $s = 0$ the mode-seeking decoding"
   },
   "symbols": {
    "\\eta": "learning rate",

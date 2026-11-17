@@ -1,5 +1,5 @@
 == Policy
-input: noise $z \sim \mathcal{N}(0, I_{L \times V})$, $K$ = `rl.K`, $T$ = `rl.temp`
+input: noise $z \sim \mathcal{N}(0, s^2 I_{L \times V})$, $s$ = `rl.zs`, $K$ = `rl.K`, $T$ = `rl.temp`
 logits by the rule `rl.option`:
     A: $t_k = t(k/K)$; $x_{k+1} = \hat X_{t_k,t_{k+1}}(x_k)$ for $k < K-1$; $\ell = \ell_{t_{K-1},1}(x_{K-1})$
     B: $t_k = t(k\tau^*/K)$, $\tau^*$ = `rl.tau_star`; $x_{k+1} = \hat X_{t_k,t_{k+1}}(x_k)$ for $k < K$; $\ell = \ell_{t_K,t_K}(x_K)$

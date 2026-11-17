@@ -4,6 +4,7 @@
 #               BETA=<KL weight to the pretrained model, rl only>  LR=<learning rate, default 3e-5>
 #               DIM, DEPTH=<network size for pretrain and pre (default 256, 6); must match CKPT for pre>
 #               MICRO=<slices of the RL batch whose gradients are summed, default 1; only memory changes>
+#               ZS=<noise scale of the RL rollouts, z ~ N(0, ZS^2 I), default 1; rl only>
 #               RESUME=<pretraining checkpoint ckpt_N.pt, pretrain only: go on from step N in the same folder>  CKE=<steps between kept checkpoints, default 10000>
 cd ~/projects/RL-for-discrete-flow-map
 NET=$1; M=$2; K=${3:-4}
@@ -18,6 +19,8 @@ TAIL="from $PRE pretraining steps, seed $S, $ST steps"
 B=""; BT=""; BN=""
 [ "$MICRO" != 1 ] && B="rl.micro=$MICRO"   # gradient summed over MICRO slices of the batch: same step, less memory
 if [ "$BETA" != 0 ]; then B="$B rl.beta=$BETA"; BT=", KL weight $BETA"; BN="_b$BETA"; fi
+ZS=${ZS:-1}
+if [ "$ZS" != 1 ]; then B="$B rl.zs=$ZS"; BT="$BT, noise scale $ZS"; BN="${BN}_zs$ZS"; fi
 LT=""; LN=""
 if [ "$LR" != 3e-5 ]; then LT=", lr $LR"; LN="_lr$LR"; fi
 SZ="model.dim=$DIM model.depth=$DEPTH"
