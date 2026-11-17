@@ -262,3 +262,54 @@ def test_noise_scale_of_rollouts():
                         gen=torch.Generator().manual_seed(0)).z
     assert torch.all(zs[0.0] == 0)
     assert torch.allclose(zs[0.5], 0.5 * zs[1.0])
+
+
+def _tiny_clamped_flowmap(V=10, L=9):
+    from rlfm.flowmap import FlowMap
+    from rlfm.model import CondDiT
+    from rlfm.timewarp import TimeWarp
+    torch.manual_seed(0)
+    net = CondDiT(V, L, L, mode="state", d=32, depth=1, heads=2)
+    for p in net.parameters():  # break the zero initialisation of the output layers
+        p.data += 0.1 * torch.randn_like(p)
+    return FlowMap(net, TimeWarp(V, identity=True), clamp=True)
+
+
+def test_clamped_flowmap_fixes_the_given_cells():
+    """cond.clamp: given cells (q_i != 0) are one-hot in the output and their input rows do not matter."""
+    from rlfm.flowmap import sample
+    fm, V, L = _tiny_clamped_flowmap(), 10, 9
+    q = torch.tensor([[3, 0, 7, 0, 0, 1, 0, 9, 0], [0, 0, 0, 0, 5, 0, 0, 0, 0]])
+    given = q != 0
+    s, t = torch.full((2,), 0.2), torch.full((2,), 0.6)
+    x = torch.randn(2, L, V)
+    d = fm.delta(x, s, t, q)
+    assert torch.allclose(d[given], torch.nn.functional.one_hot(q[given], V).float())
+    x2 = x.clone(); x2[given] = 5 * torch.randn(int(given.sum()), V)  # change only the given rows
+    assert torch.allclose(fm.delta(x2, s, t, q)[~given], d[~given], atol=1e-6)
+    y = sample(fm, torch.randn(2, L, V), 4, q).argmax(-1)
+    assert torch.equal(y[given], q[given])
+
+
+def test_clamped_policy_has_no_log_prob_on_given_cells():
+    """RL on a clamped flow map: given cells are always the clue and carry log-probability 0, so no gradient."""
+    from rlfm.policy import policy_logits, sample_tokens, token_logp
+    fm = _tiny_clamped_flowmap()
+    q = torch.tensor([[3, 0, 7, 0, 0, 1, 0, 9, 0]]).repeat(16, 1)
+    logits = policy_logits(fm, torch.randn(16, 9, 10), 4, "A", 0.9, q)
+    y = sample_tokens(logits, 1.0)
+    lp = token_logp(logits, y, 1.0)
+    given = q != 0
+    assert torch.equal(y[given], q[given]) and torch.all(lp[given] == 0)
+
+
+def test_clamped_ar_fixes_the_given_cells():
+    """ARNet with clamp_len: answer cell i is q_i whenever q_i != 0, in sampling and in teacher-forced log-probs."""
+    from rlfm.ar import ARNet, ar_logp, ar_sample
+    torch.manual_seed(0)
+    net = ARNet(10, d=32, depth=1, heads=2, clamp_len=9).eval()
+    q = torch.tensor([[3, 0, 7, 0, 0, 1, 0, 9, 0], [0, 0, 0, 0, 5, 0, 0, 0, 0]])
+    given = q != 0
+    y = ar_sample(net, q, 9)
+    assert torch.equal(y[given], q[given])
+    assert torch.all(ar_logp(net, q, y)[given].abs() < 1e-6)

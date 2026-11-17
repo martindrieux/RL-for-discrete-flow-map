@@ -86,7 +86,8 @@ def main():
         net = make_flowmap(pre_cfg, task.vocab_size, task.seq_len, task).to(device)
     else:
         m = pre_cfg["model"]
-        net = ARNet(task.vocab_size, d=m["dim"], depth=m["depth"], heads=m["heads"]).to(device)
+        clamp = task.prompt_len if pre_cfg.get("cond", {}).get("clamp", False) else 0
+        net = ARNet(task.vocab_size, d=m["dim"], depth=m["depth"], heads=m["heads"], clamp_len=clamp).to(device)
     net.load_state_dict(ck["ema"])
     net.eval()
     q_all = task.sample_questions(n, heldout=True, generator=torch.Generator().manual_seed(4321)).to(device)

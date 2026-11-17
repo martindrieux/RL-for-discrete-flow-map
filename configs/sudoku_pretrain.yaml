@@ -3,7 +3,7 @@
 seed: 0
 out_dir: runs/sudoku_pretrain
 task: {name: sudoku, n_train: 50000, n_heldout: 1000, min_blanks: 30, max_blanks: 81}
-cond: {mode: state, enc_depth: 2}
+cond: {mode: state, enc_depth: 2, clamp: false}   # clamp: true fixes the clue cells (only blanks noised and generated)
 model: {dim: 256, depth: 6, heads: 8, time_warp: true}
 train:
   steps: 100000

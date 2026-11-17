@@ -20,7 +20,8 @@ from rlfm.tracking import Run
 
 def build(cfg, task):
     m = cfg["model"]
-    return ARNet(task.vocab_size, d=m["dim"], depth=m["depth"], heads=m["heads"])
+    clamp = task.prompt_len if cfg.get("cond", {}).get("clamp", False) else 0  # Sudoku: clue cells fixed
+    return ARNet(task.vocab_size, d=m["dim"], depth=m["depth"], heads=m["heads"], clamp_len=clamp)
 
 
 @torch.no_grad()

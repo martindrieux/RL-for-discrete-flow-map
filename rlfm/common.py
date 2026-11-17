@@ -95,7 +95,9 @@ def make_flowmap(cfg: dict, V: int, L: int, task=None) -> FlowMap:
         Lq = task.prompt_len
         net = CondDiT(V, Lq, L - Lq, mode=mode, d=m["dim"], depth=m["depth"], heads=m["heads"],
                       enc_depth=cfg["cond"].get("enc_depth", 2))
-    return FlowMap(net, TimeWarp(V, identity=not m.get("time_warp", True)))
+    clamp = mode != "none" and bool(cfg["cond"].get("clamp", False))
+    assert not clamp or task.prompt_len == L - task.prompt_len, "cond.clamp needs question and answer cells aligned"
+    return FlowMap(net, TimeWarp(V, identity=not m.get("time_warp", True)), clamp=clamp)
 
 
 def split(ids: torch.Tensor, task) -> tuple[torch.Tensor, torch.Tensor]:

@@ -253,7 +253,8 @@
    "resume": "true: the run goes on from the step stored in `init` (same step numbers, new optimizer with its warmup)",
    "rl.zs": "$s$: noise scale of the RL rollouts, $z \\sim \\mathcal{N}(0, s^2 I)$; $s = 1$ is the pretraining noise, $s = 0$ the mode-seeking decoding",
    "train_min_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{train}, \\dots, \\min(b_{max}, |R|)\\}$ with $b_{train}$ = `train_min_blanks`; evaluation keeps all puzzles",
-   "train_max_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(c, |R|)\\}$ with $c$ = `train_max_blanks` (easy puzzles only); evaluation keeps all puzzles"
+   "train_max_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(c, |R|)\\}$ with $c$ = `train_max_blanks` (easy puzzles only); evaluation keeps all puzzles",
+   "cond.clamp": "Sudoku: the clue cells $G = \\{i : c_i \\ne 0\\}$ are fixed, $x_t[i] = \\mathrm{onehot}(c_i)$ and output $\\mathrm{onehot}(c_i)$ for $i \\in G$; only blank cells are noised, generated and trained (as in Helbling et al. 2026, arXiv 2606.29150). The puzzle is still also given as the condition $c$"
   },
   "symbols": {
    "\\eta": "learning rate",

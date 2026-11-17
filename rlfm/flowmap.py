@@ -10,20 +10,37 @@ from .timewarp import TimeWarp
 from .tracking import nb
 
 EPS = 1e-4
+CLAMP_LOGIT = 1e4  # logit of a fixed (given) cell: softmax is one-hot to machine precision
+
+
+@nb.core
+def clamp_state(x: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    """Given cells G = {i : q_i != 0} (Sudoku clues): x_i = onehot(q_i) for i in G, other rows unchanged."""
+    return torch.where((q != 0)[..., None], F.one_hot(q, x.shape[-1]).to(x.dtype), x)
+
+
+@nb.core
+def clamp_logits(logits: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    """For i in G the output is fixed to onehot(q_i): logit +C for q_i, -C for the other symbols."""
+    fixed = CLAMP_LOGIT * (2 * F.one_hot(q, logits.shape[-1]).float() - 1)
+    return torch.where((q != 0)[..., None], fixed, logits.float())
 
 
 class FlowMap(nn.Module):
     """Wraps the logits network; times passed in are raw times t, the network sees tau(t)."""
 
-    def __init__(self, net: nn.Module, warp: TimeWarp):
+    def __init__(self, net: nn.Module, warp: TimeWarp, clamp: bool = False):
         super().__init__()
         self.net, self.warp = net, warp
+        self.clamp = clamp  # Sudoku: the clue cells are fixed in the state and in the output (question and answer aligned)
 
     def logits(self, x: torch.Tensor, s: torch.Tensor, t: torch.Tensor, q: torch.Tensor | None = None) -> torch.Tensor:
         """q: question ids [B, Lq] for a conditional network (the state x then holds only the answer)."""
         if q is None:
             return self.net(x, self.warp.tau(s), self.warp.tau(t))
-        return self.net(x, self.warp.tau(s), self.warp.tau(t), q)
+        if not self.clamp:
+            return self.net(x, self.warp.tau(s), self.warp.tau(t), q)
+        return clamp_logits(self.net(clamp_state(x, q), self.warp.tau(s), self.warp.tau(t), q), q)
 
     def delta(self, x: torch.Tensor, s: torch.Tensor, t: torch.Tensor, q: torch.Tensor | None = None) -> torch.Tensor:
         return F.softmax(self.logits(x, s, t, q).float(), dim=-1)

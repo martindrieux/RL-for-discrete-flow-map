@@ -30,3 +30,6 @@ network input by the rule `cond.mode`:
     state: $h = [\mathrm{onehot}(c) E ; I_t E] + e_{seg}$   // question as clean one-hot rows, same input map $E$
     encoder: $h = [\mathrm{Enc}(c) ; I_t E] + e_{seg}$, $\mathrm{Enc}$ = token embedding + `cond.enc_depth` blocks
 $\hat\delta_{s,t}(x \mid c)$ = softmax of the outputs at the answer positions   // $e_{seg}$: learned given / to-generate embedding
+if `cond.clamp` (Sudoku, question and answer cells aligned): $G = \{i : c_i \ne 0\}$, the clue cells
+    before every network call: $x[i] \leftarrow \mathrm{onehot}(c_i)$ for $i \in G$   // clues never noised
+    after every call: $\hat\delta_{s,t}(x \mid c)[i] = \mathrm{onehot}(c_i)$ for $i \in G$   // so only blank cells are generated and carry loss

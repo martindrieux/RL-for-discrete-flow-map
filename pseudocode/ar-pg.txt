@@ -6,3 +6,4 @@ $A_g = r_g - \frac{1}{G-1}\sum_{j \ne g} r_j$   // per digit when the reward is 
 $\mathcal{L}_{pg} = -\frac{1}{G L_a}\sum_{g,i} sg(A_g) \log \mathrm{softmax}(f_\theta(c, y_{g,<i})_i / T)(y_{g,i})$
 $\mathcal{L}_{KL} = \frac{1}{G L_a}\sum_{g,i} \mathrm{KL}(p_\theta(\cdot | c, y_{g,<i}) \| p_{ref}(\cdot | c, y_{g,<i}))$, $p_{ref}$ the pretrained model, $p_\theta(\cdot | c, y_{<i}) = \mathrm{softmax}(f_\theta(c, y_{<i})_i / T)$
 $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta (\mathcal{L}_{pg} + \beta \mathcal{L}_{KL}))$, $\beta$ = `rl.beta`, $\eta$ = `train.lr`
+if `cond.clamp` (Sudoku): clue cells $c_i \ne 0$ are fixed, $y_{g,i} = c_i$ with $\log p = 0$; only blank cells are sampled and trained
