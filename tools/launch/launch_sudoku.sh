@@ -7,6 +7,7 @@
 #               ZS=<noise scale of the RL rollouts, z ~ N(0, ZS^2 I), default 1; rl only>
 #               TMB=<train_min_blanks: training puzzles have at least TMB blanks, evaluation unchanged; rl and pre>
 #               TXB=<train_max_blanks: training puzzles have at most TXB blanks (easy only), evaluation unchanged; pretrain, pre, rl>
+#               FG=1: run in the foreground instead of tmux (SLURM jobs)
 #               CLAMP=1: clue cells fixed in the state and output (cond.clamp=true; pretrain and pre; RL inherits it from CKPT)
 #               GS=<group size G>  GR=<groups B per step>  (rl only; defaults 8 and 32)
 #               RESUME=<pretraining checkpoint ckpt_N.pt, pretrain only: go on from step N in the same folder>  CKE=<steps between kept checkpoints, default 10000>
@@ -59,5 +60,10 @@ else
   esac
 fi
 mkdir -p runs/$n
-tmux new-session -d -s $n "( $CMD ) > runs/$n/$LOG 2>&1"
-echo launched $n
+if [ -n "$FG" ]; then  # foreground, for a SLURM job (tools/launch/babel_job.sh)
+  echo "running $n"
+  eval "( $CMD ) > runs/$n/$LOG 2>&1"
+else
+  tmux new-session -d -s $n "( $CMD ) > runs/$n/$LOG 2>&1"
+  echo launched $n
+fi
