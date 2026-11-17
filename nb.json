@@ -252,7 +252,8 @@
    "train.ckpt_every": "steps between two checkpoints kept by `keep_ckpts`",
    "resume": "true: the run goes on from the step stored in `init` (same step numbers, new optimizer with its warmup)",
    "rl.zs": "$s$: noise scale of the RL rollouts, $z \\sim \\mathcal{N}(0, s^2 I)$; $s = 1$ is the pretraining noise, $s = 0$ the mode-seeking decoding",
-   "train_min_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{train}, \\dots, \\min(b_{max}, |R|)\\}$ with $b_{train}$ = `train_min_blanks`; evaluation keeps all puzzles"
+   "train_min_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{train}, \\dots, \\min(b_{max}, |R|)\\}$ with $b_{train}$ = `train_min_blanks`; evaluation keeps all puzzles",
+   "train_max_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(c, |R|)\\}$ with $c$ = `train_max_blanks` (easy puzzles only); evaluation keeps all puzzles"
   },
   "symbols": {
    "\\eta": "learning rate",

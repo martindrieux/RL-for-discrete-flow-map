@@ -61,13 +61,16 @@ def make_task(cfg: dict):
 
 
 def training_task(task, cfg: dict):
-    """The task used for training draws only. Sudoku: train_min_blanks = b keeps the puzzles with at least b blanks,
-    b ~ U{b, ..., min(b_max, |R|)}; the evaluation still uses `task` (all puzzles)."""
-    b = cfg.get("train_min_blanks")
-    if b is None:
+    """The task used for training draws only. Sudoku: train_min_blanks = a and train_max_blanks = c keep the puzzles
+    with a <= blanks <= c, b ~ U{a, ..., min(c, |R|)}; the evaluation still uses `task` (all puzzles)."""
+    a, c = cfg.get("train_min_blanks"), cfg.get("train_max_blanks")
+    if a is None and c is None:
         return task
     t = copy.copy(task)  # shares the grid pools
-    t.min_blanks = int(b)
+    if a is not None:
+        t.min_blanks = int(a)
+    if c is not None:
+        t.max_blanks = int(c)
     return t
 
 

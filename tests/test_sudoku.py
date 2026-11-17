@@ -73,3 +73,12 @@ def test_training_task_keeps_hard_puzzles_only(task):
     assert int((q == 0).sum(1).min()) >= 45
     q_all = task.sample_questions(200, heldout=False, generator=torch.Generator().manual_seed(0))
     assert int((q_all == 0).sum(1).min()) < 45
+
+
+def test_training_task_keeps_easy_puzzles_only(task):
+    """train_max_blanks = 40: training draws have at most 40 blanks (and at least the task's 30)."""
+    from rlfm.common import training_task
+    easy = training_task(task, {"train_max_blanks": 40})
+    assert easy.max_blanks == 40 and task.max_blanks == 81
+    nb = (easy.sample_questions(200, heldout=False, generator=torch.Generator().manual_seed(0)) == 0).sum(1)
+    assert int(nb.max()) <= 40 and int(nb.min()) >= 30
