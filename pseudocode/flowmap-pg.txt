@@ -25,7 +25,7 @@ repeat $\mu$ = `rl.mu` times:
     $\theta \leftarrow \mathrm{AdamW}(\nabla_\theta(\mathcal{L}_{pg} + \lambda \mathcal{L}_{rwr} + \beta \mathcal{L}_{KL} - \alpha \mathcal{H}))$, $\lambda$ = `rl.rwr`, $\beta$ = `rl.beta`, $\alpha$ = `rl.entropy`, $\eta$ = `train.lr`
 
 == Conditional version (when the pretrained model has `cond.mode`)
-each group shares one question $c_b$ drawn from the training questions; $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer
+each group shares one question $c_b$ drawn from the training questions (Sudoku: $b \ge$ `train_min_blanks` blanks if set); $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer
 $\log \pi_\theta(y \mid z, c) = \sum_{i=1}^{L_a} \log p_{\theta,i}(y_i \mid z, c)$, $L_a$ answer length
 $r_g$ by the rule `reward`:
     exact: $r_g = \mathbb{1}[y_g = y^*(c_b)]$   // $y^*(c)$: true answer digits

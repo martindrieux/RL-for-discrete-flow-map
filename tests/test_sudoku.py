@@ -62,3 +62,14 @@ def test_reward_checks_rules_and_givens():
     assert R.correct([ok, swapped, other_givens]).tolist() == [True, False, False]
     assert R.well_formed([ok, other_givens, PUZZLE + "0" + SOLUTION[1:]]).tolist() == [True, False, False]
     assert R.reward([ok]).tolist() == [1.0]
+
+
+def test_training_task_keeps_hard_puzzles_only(task):
+    """train_min_blanks = 45: training draws have at least 45 blanks; the evaluation task is unchanged."""
+    from rlfm.common import training_task
+    hard = training_task(task, {"train_min_blanks": 45})
+    assert training_task(task, {}) is task and task.min_blanks == 30 and hard.min_blanks == 45
+    q = hard.sample_questions(200, heldout=False, generator=torch.Generator().manual_seed(0))
+    assert int((q == 0).sum(1).min()) >= 45
+    q_all = task.sample_questions(200, heldout=False, generator=torch.Generator().manual_seed(0))
+    assert int((q_all == 0).sum(1).min()) < 45

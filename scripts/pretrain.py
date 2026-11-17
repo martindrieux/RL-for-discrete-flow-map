@@ -7,7 +7,7 @@ import time
 
 import torch
 
-from rlfm.common import (EMA, cond_mode, eval_conditional, eval_sampler, load_config, make_flowmap, make_task, one_hot,
+from rlfm.common import (EMA, training_task, cond_mode, eval_conditional, eval_sampler, load_config, make_flowmap, make_task, one_hot,
                          require_holdout, split)
 from rlfm.flowmap import pretrain_loss
 from rlfm.tracking import Run
@@ -19,6 +19,7 @@ def main():
     torch.manual_seed(cfg.get("seed", 0))
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     task, reward_mod = make_task(cfg)
+    train_task = training_task(task, cfg)
     V, L = task.vocab_size, task.seq_len
     fm = make_flowmap(cfg, V, L, task).to(device)
     init_ck = None
@@ -41,7 +42,7 @@ def main():
     print(f"params: {sum(p.numel() for p in fm.net.parameters()) / 1e6:.2f}M  V={V} L={L}  device={device}", flush=True)
     t0, best = time.time(), -1.0
     for step in range(start + 1, tr["steps"] + 1):
-        ids = task.sample(tr["batch_size"]).to(device)
+        ids = train_task.sample(tr["batch_size"]).to(device)
         if conditional:
             q, ans = split(ids, task)
             losses = pretrain_loss(fm, one_hot(ans, V), q=q)

@@ -13,7 +13,7 @@ import torch
 import torch.nn.functional as F
 
 from rlfm.ar import ARNet, answer_logits, ar_kl, ar_logp, ar_sample
-from rlfm.common import EMA, load_config, make_task, require_holdout
+from rlfm.common import EMA, load_config, make_task, require_holdout, training_task
 from rlfm.rl import advantages, pg_loss
 from rlfm.tracking import Run
 
@@ -57,6 +57,7 @@ def main():
         ck = torch.load(cfg["init"], map_location=device, weights_only=False)
         pre_cfg = ck["pre_cfg"] if "pre_cfg" in ck else ck["cfg"]
     task, reward_mod = make_task(pre_cfg)
+    train_task = training_task(task, cfg)
     net = build(pre_cfg, task).to(device)
     if ck is not None:
         net.load_state_dict(ck["ema"])
@@ -96,11 +97,11 @@ def main():
     t0 = time.time()
     for step in range(start + 1, tr["steps"] + 1):
         if mode in ("pretrain", "sft"):
-            ids = task.sample(tr.get("batch_size", B * G)).to(device)
+            ids = train_task.sample(tr.get("batch_size", B * G)).to(device)
             loss = -ar_logp(net, ids[:, :Lq], ids[:, Lq:]).mean()
             logs = {"loss": loss}
         else:
-            q = task.sample_questions(B, heldout=False).to(device).repeat_interleave(G, 0)
+            q = train_task.sample_questions(B, heldout=False).to(device).repeat_interleave(G, 0)
             y = ar_sample(net, q, La, temp)
             s = task.decode(torch.cat([q, y], 1).cpu())
             if reward_kind == "per_digit":

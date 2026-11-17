@@ -60,6 +60,17 @@ def make_task(cfg: dict):
     raise ValueError(cfg["task"]["name"])
 
 
+def training_task(task, cfg: dict):
+    """The task used for training draws only. Sudoku: train_min_blanks = b keeps the puzzles with at least b blanks,
+    b ~ U{b, ..., min(b_max, |R|)}; the evaluation still uses `task` (all puzzles)."""
+    b = cfg.get("train_min_blanks")
+    if b is None:
+        return task
+    t = copy.copy(task)  # shares the grid pools
+    t.min_blanks = int(b)
+    return t
+
+
 def require_holdout(cfg: dict, allow: bool, what: str) -> None:
     """Every experiment keeps a held-out set; refuse to run without one unless explicitly allowed."""
     tc = cfg["task"]

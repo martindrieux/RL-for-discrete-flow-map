@@ -8,7 +8,7 @@ import time
 
 import torch
 
-from rlfm.common import cond_mode, load_config, load_flowmap, make_task, require_holdout, task_metrics
+from rlfm.common import cond_mode, load_config, load_flowmap, make_task, require_holdout, task_metrics, training_task
 from rlfm.policy import chain_logits, policy_logits, sample_tokens, stochastic_chain, token_entropy, token_kl
 from rlfm.rl import RLConfig, collect, rl_update, sft_loss
 from rlfm.tracking import Run
@@ -103,7 +103,8 @@ def main():
         full = y if q is None else torch.cat([q, y], 1)
         return reward_mod.reward(task.decode(full.cpu()))
 
-    question_fn = (lambda B: task.sample_questions(B, heldout=False)) if conditional else None
+    train_task = training_task(task, cfg_all)
+    question_fn = (lambda B: train_task.sample_questions(B, heldout=False)) if conditional else None
     ev = cfg_all["eval"]
     g_eval = torch.Generator().manual_seed(ev["seed"])
     if conditional:  # n training questions and n held-out questions, each with its own fixed noise
@@ -127,10 +128,10 @@ def main():
         if sft:
             N = rc.groups * rc.group_size
             if hasattr(task, "true_answer"):
-                q = task.sample_questions(N, heldout=False).to(device)
+                q = train_task.sample_questions(N, heldout=False).to(device)
                 y_star = task.true_answer(q)
             else:  # several valid answers: the pretraining pairs (question, one valid answer)
-                ids = task.sample(N).to(device)
+                ids = train_task.sample(N).to(device)
                 q, y_star = ids[:, :task.prompt_len], ids[:, task.prompt_len:]
             z = torch.randn(N, L, V, device=device)
             loss = sft_loss(fm, z, y_star, rc, q)
