@@ -313,3 +313,56 @@ def test_clamped_ar_fixes_the_given_cells():
     y = ar_sample(net, q, 9)
     assert torch.equal(y[given], q[given])
     assert torch.all(ar_logp(net, q, y)[given].abs() < 1e-6)
+
+
+def test_onepass_loss_trains_the_one_jump_policy_from_zero():
+    """One-pass baseline: its loss is the cross-entropy of the logits that the RL policy and the evaluation use
+    with K = 1 jump from z = 0; the given cells contribute nothing; the loss decreases on fixed targets."""
+    from rlfm.flowmap import onepass_loss
+    from rlfm.policy import policy_logits
+    fm, V, L = _tiny_clamped_flowmap(), 10, 9
+    q = torch.tensor([[3, 0, 7, 0, 0, 1, 0, 9, 0], [0, 0, 0, 0, 5, 0, 0, 0, 0]])
+    ans = torch.where(q != 0, q, torch.tensor([[2, 4, 7, 6, 8, 1, 5, 9, 3], [1, 2, 3, 4, 5, 6, 7, 8, 9]]))
+    x1 = torch.nn.functional.one_hot(ans, V).float()
+    logits = policy_logits(fm, torch.zeros(2, L, V), 1, "A", 0.9, q)
+    ce = -(x1 * torch.log_softmax(logits, -1)).sum(-1)
+    assert torch.all(ce[q != 0].abs() < 1e-4)
+    loss = onepass_loss(fm, x1, q)
+    assert torch.allclose(loss, ce.mean(), atol=1e-5)
+    opt = torch.optim.Adam(fm.net.parameters(), lr=1e-2)
+    for _ in range(100):
+        opt.zero_grad(); onepass_loss(fm, x1, q).backward(); opt.step()
+    assert onepass_loss(fm, x1, q).item() < 0.5 * loss.item()
+
+
+def test_train_state_round_trip_resumes_exactly(tmp_path):
+    """A run stopped after saving its state and resumed from it continues exactly as if it had not stopped."""
+    from rlfm.common import load_train_state, resumed_title, save_train_state
+
+    def step(fm, opt):
+        x = torch.randn(4, 9, 12)
+        loss = fm.net(x, torch.rand(4), torch.rand(4)).square().mean()
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+
+    fm = tiny()
+    opt = torch.optim.AdamW(fm.net.parameters(), lr=1e-2)
+    for _ in range(2):
+        step(fm, opt)
+    path = str(tmp_path / "state.pt")
+    save_train_state(path, 2, fm, opt, sched={"k": 1})
+    for _ in range(2):
+        step(fm, opt)
+    want = [p.detach().clone() for p in fm.net.parameters()]
+
+    fm2 = tiny()  # fresh weights and optimizer, then the saved state
+    opt2 = torch.optim.AdamW(fm2.net.parameters(), lr=1e-2)
+    torch.manual_seed(123)  # another random state, overwritten by the saved one
+    st = load_train_state(path, fm2, opt2, "cpu")
+    assert st["step"] == 2 and st["sched"] == {"k": 1}
+    for _ in range(2):
+        step(fm2, opt2)
+    assert all(torch.equal(a, b) for a, b in zip(want, fm2.net.parameters()))
+    assert resumed_title("Flow map, RL, seed 0, 5000 steps", 2500, 5000) == "Flow map, RL, seed 0, steps 2500-5000"
+    assert resumed_title("Flow map, RL", 2500, 5000) == "Flow map, RL, from step 2500"

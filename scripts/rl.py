@@ -1,6 +1,9 @@
 """RL fine-tuning of a pretrained flow map on the categorical likelihood log pi(y | z).
 
 python scripts/rl.py configs/arith_rl.yaml init=runs/pretrain/last.pt out_dir=runs/rl_x seed=0 rl.temp=2
+
+At every evaluation the policy, optimizer and random number generators are saved to out_dir/state.pt; with resume=true
+a run whose out_dir holds state.pt goes on from that step (a preempted SLURM job), otherwise it starts from init.
 """
 import copy
 import os
@@ -8,7 +11,8 @@ import time
 
 import torch
 
-from rlfm.common import cond_mode, load_config, load_flowmap, make_task, require_holdout, task_metrics, training_task
+from rlfm.common import (cond_mode, load_config, load_flowmap, load_train_state, make_task, require_holdout, resumed_title,
+                         save_train_state, task_metrics, training_task)
 from rlfm.policy import chain_logits, policy_logits, sample_tokens, stochastic_chain, token_entropy, token_kl
 from rlfm.rl import RLConfig, collect, rl_update, sft_loss
 from rlfm.tracking import Run
@@ -85,6 +89,12 @@ def main():
     out = cfg_all["out_dir"]
     os.makedirs(out, exist_ok=True)
     trk = cfg_all.get("track", {})
+    state_path, start = os.path.join(out, "state.pt"), 0
+    if cfg_all.get("resume") and os.path.exists(state_path):  # ref stays the init checkpoint; fm and opt go on
+        start = load_train_state(state_path, fm, opt, device)["step"]
+        print(f"resumed from {state_path} at step {start}", flush=True)
+        if trk.get("title"):
+            trk["title"] = resumed_title(trk["title"], start, tr["steps"])
     run = Run(out, use_nb=trk.get("nb", False), subproject=trk.get("subproject"), title=trk.get("title"),
               formula=trk.get("formula"), algo=trk.get("algo"), config=cfg_all, question=trk.get("question"))
 
@@ -119,12 +129,14 @@ def main():
 
         def do_eval():
             return evaluate(fm, ref, task, reward_mod, rc, z_eval, ev["seed"])
-    run.log(0, **do_eval())
+    m = None
+    if start == 0:
+        run.log(0, **do_eval())
     t0 = time.time()
     sft = cfg_all.get("sft", False)  # supervised fine-tuning on the true answers instead of RL (same policy, same budget)
     if sft and not conditional:
         raise ValueError("sft needs a conditional model (the true answer comes from the question)")
-    for step in range(1, tr["steps"] + 1):
+    for step in range(start + 1, tr["steps"] + 1):
         if sft:
             N = rc.groups * rc.group_size
             if hasattr(task, "true_answer"):
@@ -149,6 +161,9 @@ def main():
         if step % ev["every"] == 0 or step == tr["steps"]:
             m = do_eval()
             run.log(step, **m)
+            save_train_state(state_path, step, fm, opt)
+    if m is None:  # resumed at the last step
+        m = do_eval()
     torch.save({"cfg": cfg_all, "pre_cfg": pre_cfg, "ema": fm.state_dict()}, os.path.join(out, "last.pt"))
     run.finish(**m)
 

@@ -92,6 +92,15 @@ def semigroup_loss(fm: FlowMap, x1: torch.Tensor, gen: torch.Generator | None = 
     return -(target * logp).sum(-1).mean()
 
 
+@nb.core
+def onepass_loss(fm: FlowMap, x1: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+    """One-pass baseline, same network: state x = 0 (clue cells filled when clamped), s = 0, t = 1;
+    L = -(1/L) sum_l x1_l . log softmax(l_{0,1}(0, q))_l, averaged over the batch (the K = 1 policy from z = 0)."""
+    B, dev = x1.shape[0], x1.device
+    logits = fm.logits(torch.zeros_like(x1), torch.zeros(B, device=dev), torch.ones(B, device=dev), q)
+    return -(x1 * F.log_softmax(logits.float(), dim=-1)).sum(-1).mean()
+
+
 def pretrain_loss(fm: FlowMap, x1: torch.Tensor, gen: torch.Generator | None = None, q: torch.Tensor | None = None) -> dict:
     """L = L_diag (first half of the batch) + L_off (second half); x1 is the answer only when q is given."""
     B = x1.shape[0] // 2

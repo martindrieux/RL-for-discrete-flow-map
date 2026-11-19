@@ -1,5 +1,6 @@
 """Config loading, model construction, checkpoints and task evaluation shared by the scripts."""
 import copy
+import os
 import sys
 
 import torch
@@ -55,7 +56,8 @@ def make_task(cfg: dict):
     if cfg["task"]["name"] == "sudoku":
         tc = cfg["task"]
         task = SudokuTask(n_train=tc.get("n_train", 50_000), n_heldout=tc.get("n_heldout", 1000),
-                          min_blanks=tc.get("min_blanks", 30), max_blanks=tc.get("max_blanks", 81))
+                          min_blanks=tc.get("min_blanks", 30), max_blanks=tc.get("max_blanks", 81),
+                          source=tc.get("source", "generated"), subset=tc.get("subset", 0))
         return task, sudoku_reward
     raise ValueError(cfg["task"]["name"])
 
@@ -114,6 +116,32 @@ def load_flowmap(path: str, device) -> tuple[FlowMap, dict]:
     return fm, ck["cfg"]
 
 
+def save_train_state(path: str, step: int, model: torch.nn.Module, opt: torch.optim.Optimizer, **extra) -> None:
+    """What a stopped run needs to go on from `step`: weights, optimizer state and random number generators. Written to
+    a temporary file and renamed, so a job stopped while saving keeps the previous state."""
+    st = {"step": step, "model": model.state_dict(), "opt": opt.state_dict(), "rng_cpu": torch.get_rng_state(),
+          "rng_cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None, **extra}
+    torch.save(st, path + ".tmp")
+    os.replace(path + ".tmp", path)
+
+
+def load_train_state(path: str, model: torch.nn.Module, opt: torch.optim.Optimizer, device) -> dict:
+    """Restores what save_train_state wrote into model, opt and the random number generators; returns the whole state."""
+    st = torch.load(path, map_location=device, weights_only=False)
+    model.load_state_dict(st["model"])
+    opt.load_state_dict(st["opt"])
+    torch.set_rng_state(st["rng_cpu"].cpu())
+    if st["rng_cuda"] is not None and torch.cuda.is_available():
+        torch.cuda.set_rng_state_all([s.cpu() for s in st["rng_cuda"]])
+    return st
+
+
+def resumed_title(title: str, start: int, steps: int) -> str:
+    """A resumed run is a new tracker experiment: '..., 5000 steps' becomes '..., steps 2500-5000'."""
+    tail = f", {steps} steps"
+    return title[:-len(tail)] + f", steps {start}-{steps}" if title.endswith(tail) else f"{title}, from step {start}"
+
+
 class EMA:
     def __init__(self, model: torch.nn.Module, decay: float):
         self.decay, self.model = decay, copy.deepcopy(model).eval()
@@ -159,14 +187,14 @@ def eval_sampler(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed: int
 
 
 @torch.no_grad()
-def eval_conditional(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed: int, device) -> dict:
-    """Argmax answers to n training questions and n held-out questions, from fixed noises."""
+def eval_conditional(fm: FlowMap, task, reward_mod, Ks: list[int], n: int, seed: int, device, zs: float = 1.0) -> dict:
+    """Argmax answers to n training questions and n held-out questions, from fixed noises z ~ N(0, zs^2 I)."""
     g = torch.Generator().manual_seed(seed)
     out = {}
     for split_name, held in (("train", False), ("heldout", True)):
         q = task.sample_questions(n, heldout=held, generator=g).to(device)
         La = task.seq_len - task.prompt_len
-        z = torch.randn(n, La, task.vocab_size, generator=g).to(device)
+        z = zs * torch.randn(n, La, task.vocab_size, generator=g).to(device)
         for K in Ks:
             y = sample(fm, z, K, q).argmax(-1)
             s = task.decode(torch.cat([q, y], 1).cpu())

@@ -4,6 +4,8 @@ python scripts/ar.py configs/countdown_pretrain.yaml mode=pretrain out_dir=runs/
 python scripts/ar.py configs/arith_rl.yaml mode=rl init=runs/ar_countdown/last.pt out_dir=runs/ar_rl reward=exact
 python scripts/ar.py configs/arith_rl.yaml mode=sft init=runs/ar_countdown/last.pt out_dir=runs/ar_sft
 RL: same rollouts, rewards, leave-one-out advantages and evaluation as scripts/rl.py, with pi the autoregressive policy.
+rl and sft save the policy, optimizer and random number generators to out_dir/state.pt at every evaluation; with
+resume=true they go on from it when it exists (pretraining resumes from init instead, see pretrain.py).
 """
 import copy
 import os
@@ -13,7 +15,8 @@ import torch
 import torch.nn.functional as F
 
 from rlfm.ar import ARNet, answer_logits, ar_kl, ar_logp, ar_sample
-from rlfm.common import EMA, load_config, make_task, require_holdout, training_task
+from rlfm.common import (EMA, load_config, load_train_state, make_task, require_holdout, resumed_title, save_train_state,
+                         training_task)
 from rlfm.rl import advantages, pg_loss
 from rlfm.tracking import Run
 
@@ -81,6 +84,14 @@ def main():
     out = cfg["out_dir"]
     os.makedirs(out, exist_ok=True)
     trk = cfg.get("track", {})
+    state_path, resumed = os.path.join(out, "state.pt"), False
+    if mode != "pretrain" and cfg.get("resume") and os.path.exists(state_path):  # ref stays the init checkpoint
+        st = load_train_state(state_path, net, opt, device)
+        sched.load_state_dict(st["sched"])
+        start, resumed = st["step"], True
+        print(f"resumed from {state_path} at step {start}", flush=True)
+        if trk.get("title"):
+            trk["title"] = resumed_title(trk["title"], start, tr["steps"])
     run = Run(out, use_nb=trk.get("nb", False), subproject=trk.get("subproject"), title=trk.get("title"),
               formula=trk.get("formula"), algo=trk.get("algo"), config=cfg, question=trk.get("question"))
     print(f"params: {sum(p.numel() for p in net.parameters()) / 1e6:.2f}M mode={mode}", flush=True)
@@ -94,7 +105,9 @@ def main():
     Lq, La = task.prompt_len, task.answer_len
     every = tr.get("eval_every", ev.get("every", 250))
     eval_net = lambda: ema.model if ema is not None else net
-    run.log(start, **evaluate(eval_net(), ref, task, reward_mod, evalset, temp, ev["seed"]))
+    m = None
+    if not resumed:
+        run.log(start, **evaluate(eval_net(), ref, task, reward_mod, evalset, temp, ev["seed"]))
     t0 = time.time()
     for step in range(start + 1, tr["steps"] + 1):
         if mode in ("pretrain", "sft"):
@@ -136,6 +149,10 @@ def main():
             if cfg.get("keep_ckpts") and step % tr.get("ckpt_every", every) == 0:  # to start RL from a chosen accuracy
                 torch.save({"cfg": cfg, "pre_cfg": pre_cfg, "step": step, "ema": eval_net().state_dict(),
                             "model": net.state_dict()}, os.path.join(out, f"ckpt_{step}.pt"))
+            if mode != "pretrain":
+                save_train_state(state_path, step, net, opt, sched=sched.state_dict())
+    if m is None:  # resumed at the last step
+        m = evaluate(eval_net(), ref, task, reward_mod, evalset, temp, ev["seed"])
     run.finish(**m)
 
 

@@ -1,0 +1,13 @@
+== Training step
+input: puzzle $c \in \{0, \dots, 9\}^{81}$ ($c_i = 0$: blank), solution one-hot $x_1 \in \{0,1\}^{81 \times V}$, batch $B$ = `train.batch_size`
+$x = 0 \in \mathbb{R}^{81 \times V}$, $x[i] \leftarrow \mathrm{onehot}(c_i)$ for the clue cells $c_i \ne 0$   // the flow map's state at $z = 0$, if `cond.clamp`
+$h = [\mathrm{onehot}(c) E ; x E] + e_{seg}$, network $f_\theta$ with times $s = 0$, $t = 1$   // same network as the flow map
+$\ell = f_\theta(x, s, t \mid c) \in \mathbb{R}^{81 \times V}$, $\ell[i] = \pm C$ on the clue cells   // clue cells fixed, if `cond.clamp`
+$\mathcal{L} = -\frac{1}{81}\sum_i x_1^i \cdot \log \mathrm{softmax}(\ell[i])$
+$\theta \leftarrow \mathrm{AdamW}(\nabla_\theta \mathcal{L})$, $\eta$ = `train.lr`
+$\bar\theta \leftarrow \lambda \bar\theta + (1-\lambda)\theta$, $\lambda$ = `train.ema`
+
+== Answer
+input: puzzle $c$
+$\ell = f_{\bar\theta}(x, 0, 1 \mid c)$ with $x$ as above   // one network call; the flow map with $K = 1$ jump from $z = 0$
+return $y_i = \arg\max_v \ell[i, v]$

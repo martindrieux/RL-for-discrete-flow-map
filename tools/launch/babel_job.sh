@@ -1,6 +1,6 @@
 #!/bin/bash
-# SLURM job on Babel for tools/launch/launch_sudoku.sh. Requeue-safe for pretraining: if RUNDIR holds last.pt,
-# the run resumes from it (same folder, step numbers continue).
+# SLURM job on Babel for tools/launch/launch_sudoku.sh. Requeue-safe: pretraining resumes from RUNDIR/last.pt
+# (same folder, step numbers continue); rl and sft resume from runs/<run>/state.pt (saved at every evaluation).
 # usage: sbatch -J <name> -o <log> [--gres=gpu:L40S:1] --export=ALL,RUNDIR=runs/<run>,CLAMP=1,... tools/launch/babel_job.sh fm pretrain 4 0
 #SBATCH -p preempt
 #SBATCH --qos=preempt_qos
@@ -15,5 +15,6 @@ if [ -n "$RUNDIR" ] && [ -f "$RUNDIR/last.pt" ] && [ "$2" = pretrain ]; then
   [ -f "$RUNDIR/ckpt_$STEP.pt" ] || cp "$RUNDIR/last.pt" "$RUNDIR/ckpt_$STEP.pt"
   export RESUME="$RUNDIR/ckpt_$STEP.pt"
 fi
+[ "$2" = rl ] || [ "$2" = sft ] && export RLRESUME=1  # RL and fine-tuning go on from runs/<run>/state.pt after a requeue
 nvidia-smi --query-gpu=name,memory.total --format=csv,noheader
 FG=1 bash tools/launch/launch_sudoku.sh "$@"

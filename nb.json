@@ -180,6 +180,14 @@
    "kind": "curve",
    "metric": "zero_heldout_correct",
    "better": "higher"
+  },
+  {
+   "title": "Grids fully right, held-out puzzles, 32 jumps",
+   "label": "Grids fully right, held-out, $K = 32$",
+   "shows": "fraction of 1000 held-out Sudoku puzzles (Sudoku-Extreme: the validation puzzles) whose answer from $z = 0$ with $K = 32$ jumps, most likely digit per cell, fills the whole grid correctly",
+   "kind": "curve",
+   "metric": "K32_heldout_correct",
+   "better": "higher"
   }
  ],
  "glossary": {
@@ -188,7 +196,8 @@
    "flowmap-pg": "$\\mathcal{L}(\\theta) = -\\frac{1}{GL}\\sum_{g,i} \\min(\\rho_{g,i} A_g, \\mathrm{clip}(\\rho_{g,i}) A_g) + \\beta KL$, $\\rho_{g,i} = p_{\\theta,i}(y_{g,i}\\mid z_g)/p_{old,i}(y_{g,i}\\mid z_g)$",
    "flowmap-sft": "$\\mathcal{L}_{sft} = -\\frac{1}{N L_a}\\sum_{n,i} \\log p_{\\theta,i}(y^*_{n,i} \\mid z_n, c_n)$: the true answer as target of the RL policy, same budget as RL",
    "ar-ce": "autoregressive baseline: $\\mathcal{L}_{ar} = -\\frac{1}{B L_a}\\sum_{b,i} \\log \\mathrm{softmax}(f_\\theta(c_b, y_{b,<i})_i)(y_{b,i})$, causal transformer of the same size",
-   "ar-pg": "autoregressive baseline RL: $\\mathcal{L}_{pg} = -\\frac{1}{G L_a}\\sum_{g,i} sg(A_g) \\log \\pi_\\theta(y_{g,i} \\mid c, y_{g,<i})$, same advantages and rewards as flowmap-pg"
+   "ar-pg": "autoregressive baseline RL: $\\mathcal{L}_{pg} = -\\frac{1}{G L_a}\\sum_{g,i} sg(A_g) \\log \\pi_\\theta(y_{g,i} \\mid c, y_{g,<i})$, same advantages and rewards as flowmap-pg",
+   "onepass-ce": "one-pass baseline, same network as the flow map: $\\mathcal{L} = -\\frac{1}{L}\\sum_i x_1^i \\cdot \\log \\mathrm{softmax}(f_\\theta(0, s{=}0, t{=}1 \\mid c)_i)$, one call from the zero state; answer $\\arg\\max$ per cell"
   },
   "params": {
    "seed": "random seed",
@@ -254,7 +263,11 @@
    "rl.zs": "$s$: noise scale of the RL rollouts, $z \\sim \\mathcal{N}(0, s^2 I)$; $s = 1$ is the pretraining noise, $s = 0$ the mode-seeking decoding",
    "train_min_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{train}, \\dots, \\min(b_{max}, |R|)\\}$ with $b_{train}$ = `train_min_blanks`; evaluation keeps all puzzles",
    "train_max_blanks": "Sudoku, training draws only: blanks $b \\sim \\mathcal{U}\\{b_{min}, \\dots, \\min(c, |R|)\\}$ with $c$ = `train_max_blanks` (easy puzzles only); evaluation keeps all puzzles",
-   "cond.clamp": "Sudoku: the clue cells $G = \\{i : c_i \\ne 0\\}$ are fixed, $x_t[i] = \\mathrm{onehot}(c_i)$ and output $\\mathrm{onehot}(c_i)$ for $i \\in G$; only blank cells are noised, generated and trained (as in Helbling et al. 2026, arXiv 2606.29150). The puzzle is still also given as the condition $c$"
+   "cond.clamp": "Sudoku: the clue cells $G = \\{i : c_i \\ne 0\\}$ are fixed, $x_t[i] = \\mathrm{onehot}(c_i)$ and output $\\mathrm{onehot}(c_i)$ for $i \\in G$; only blank cells are noised, generated and trained (as in Helbling et al. 2026, arXiv 2606.29150). The puzzle is still also given as the condition $c$",
+   "train.objective": "training loss: flowmap ($\\mathcal{L}_{diag} + \\mathcal{L}_{off}$) or onepass (cross-entropy of one call from $x = 0$, $s = 0$, $t = 1$)",
+   "eval.zs": "noise scale $s$ of the evaluation inputs during pretraining, $z \\sim \\mathcal{N}(0, s^2 I)$; $s = 0$ for the one-pass baseline",
+   "task.source": "Sudoku puzzles: generated (blanks drawn from our own solved grids) or extreme (Sudoku-Extreme, released puzzles: 1,000 for training, 1,000 validation, 1,000 test)",
+   "task.subset": "Sudoku-Extreme: which of the 1,000-puzzle training sets is used (set to the seed); every set has n / 10 puzzles from each tenth of the rating distribution"
   },
   "symbols": {
    "\\eta": "learning rate",
