@@ -14,6 +14,7 @@ beam=w also reports the accuracy of the best of w beams of the autoregressive mo
 python scripts/eval_passk.py fm runs/ckpt_cd_fm_100k.pt [K=4] [n=500] [S=64] [zs=1] [T=1]
 python scripts/eval_passk.py ar runs/ckpt_cd_ar_40k.pt beam=8
 python scripts/eval_passk.py ar runs/ckpt_cd_ar_100k.pt
+split=test evaluates on the test puzzles instead of the held-out (validation) ones (Sudoku-Extreme only).
 """
 import json
 import math
@@ -90,6 +91,9 @@ def main():
         net = ARNet(task.vocab_size, d=m["dim"], depth=m["depth"], heads=m["heads"], clamp_len=clamp).to(device)
     net.load_state_dict(ck["ema"])
     net.eval()
+    if "split" in kw:  # Sudoku-Extreme: "test" or "heldout" (validation)
+        assert getattr(task, "source", None) == "extreme", "split= needs a Sudoku-Extreme checkpoint"
+        task.eval_split = kw["split"]
     q_all = task.sample_questions(n, heldout=True, generator=torch.Generator().manual_seed(4321)).to(device)
     gen = torch.Generator(device=device).manual_seed(0)
     countdown = pre_cfg["task"]["name"] == "countdown"
@@ -119,7 +123,7 @@ def main():
     ks = [k for k in (1, 2, 4, 8, 16, 32, 64) if k <= S]
     out = {"kind": kind, "ckpt": path, "K": K if kind == "fm" else None, "n": n, "S": S, "zs": zs, "T": T,
            **{f"pass@{k}": sum(pass_at_k(c, S, k) for c in counts) / n for k in ks},
-           "distinct_correct": sum(distinct) / n}
+           "distinct_correct": sum(distinct) / n, "split": getattr(task, "eval_split", "heldout")}
     if countdown:
         out["distinct_canonical"] = sum(canon) / n
     else:  # Sudoku: pass@1 by number of blanks

@@ -1,0 +1,25 @@
+# Sudoku-Extreme in the setting of Flow Reasoning Models (arXiv 2606.29150, Appendix A.1 and Table 3), without their
+# additions (self-conditioning, training on states from the model's own inference): 1,000 training puzzles per seed
+# (task.subset = seed; rlfm/data/sudoku_extreme.py), random Sudoku symmetries, batch 128, lr 3e-4 constant (no warmup),
+# no weight decay, EMA 0.9999, 200k steps (their two stages of 100k). Held-out = the 1,000 validation puzzles; the
+# 1,000 test puzzles are evaluated after training: scripts/eval_passk.py fm CKPT K=32 zs=0 T=0.1 n=1000 S=2 split=test
+seed: 0
+out_dir: runs/sdx_pretrain
+task: {name: sudoku, source: extreme, subset: 0, n_heldout: 1000}
+cond: {mode: state, enc_depth: 2, clamp: true}
+model: {dim: 256, depth: 6, heads: 8, time_warp: true}
+train:
+  steps: 200000
+  batch_size: 128
+  lr: 3.0e-4
+  warmup: 1
+  ema: 0.9999
+  grad_clip: 1.0
+  log_every: 500
+  eval_every: 5000
+eval: {Ks: [1, 4, 32], n: 1000, seed: 1234, zs: 0}
+keep_ckpts: true
+track:
+  nb: false
+  subproject: sudoku-extreme
+  algo: fmlm-direct

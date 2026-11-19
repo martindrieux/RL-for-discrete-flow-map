@@ -6,3 +6,7 @@ nb_runs/
 *.pt
 .pytest_cache/
 *.egg-info/
+
+# Sudoku-Extreme subset: third-party puzzles with no listed license; rebuild with python -m rlfm.data.sudoku_extreme
+data/sudoku/extreme.npz
+.DS_Store

@@ -8,6 +8,11 @@ solution unique (more givens only remove solutions), so a puzzle blanks b cells 
 max_blanks, |R|)}. Each drawn grid gets a random symmetry of Sudoku (digit relabelling, row permutations within bands,
 band permutations, the same for columns, transpose), which keeps validity and uniqueness.
 Held-out puzzles come from a separate pool of grids (other seeds), never used in training.
+
+source="extreme": fixed released puzzles instead (Sudoku-Extreme, see rlfm/data/sudoku_extreme.py): training draws one
+of the 1,000 puzzles of training set `subset` and applies a random symmetry to puzzle and solution (min_blanks and
+max_blanks are not used); held-out draws return validation puzzles (eval_split="heldout") or test puzzles
+(eval_split="test") exactly as released.
 """
 import os
 import random
@@ -25,6 +30,7 @@ UNITS = ([[r * 9 + c for c in range(9)] for r in range(9)] + [[r * 9 + c for r i
 FULL = 0b1111111110  # bits 1..9
 POOL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "data", "sudoku")
 SEED_OFFSET = {"train": 0, "heldout": 1_000_000_000}
+EXTREME_PATH = os.path.join(POOL_DIR, "extreme.npz")
 
 
 def solve(grid: list[int], limit: int = 2, rng: random.Random | None = None) -> tuple[int, list[int] | None]:
@@ -133,9 +139,13 @@ def _symmetries(rng: np.random.Generator, B: int) -> tuple[np.ndarray, np.ndarra
 
 
 class SudokuTask:
-    def __init__(self, n_train: int = 50_000, n_heldout: int = 1000, min_blanks: int = 30, max_blanks: int = 81):
+    def __init__(self, n_train: int = 50_000, n_heldout: int = 1000, min_blanks: int = 30, max_blanks: int = 81,
+                 source: str = "generated", subset: int = 0):
+        assert source in ("generated", "extreme")
         self.n_train, self.n_heldout = n_train, n_heldout
         self.min_blanks, self.max_blanks = min_blanks, max_blanks
+        self.source, self.subset = source, subset
+        self.eval_split = "heldout"  # "test": held-out draws come from the test puzzles (source="extreme")
         self.chars = CHARS
         self.vocab_size = len(CHARS)
         self.prompt_len, self.answer_len = 81, 81
@@ -143,6 +153,14 @@ class SudokuTask:
         self._pools = {}
 
     def pool(self, split: str) -> tuple[np.ndarray, np.ndarray]:
+        """(solutions, removable cells) of a pool of generated grids; source="extreme": (solutions, puzzles)."""
+        if split not in self._pools and self.source == "extreme":
+            d = np.load(EXTREME_PATH)
+            key = {"train": "train", "heldout": "val", "test": "test"}[split]
+            sol, puz = d[f"{key}_solution"], d[f"{key}_puzzle"]
+            if key == "train":
+                sol, puz = sol[self.subset], puz[self.subset]
+            self._pools[split] = (sol.astype(np.int64), puz.astype(np.int64))
         if split not in self._pools:
             path = pool_path(split, self.n_train if split == "train" else self.n_heldout)
             if not os.path.exists(path):
@@ -154,10 +172,15 @@ class SudokuTask:
     def _draw(self, B: int, heldout: bool, generator: torch.Generator | None, distinct: bool = False):
         """(puzzles, solutions), each [B, 81] int64; distinct: different grids when B <= pool size."""
         rng = np.random.default_rng(int(torch.randint(0, 2**62, (1,), generator=generator)))
-        sol, rem = self.pool("heldout" if heldout else "train")
+        sol, rem = self.pool(self.eval_split if heldout else "train")
         N = len(sol)
         i = rng.permutation(N)[:B] if distinct and B <= N else rng.integers(0, N, B)
+        if self.source == "extreme" and heldout:  # validation and test puzzles as released
+            return torch.from_numpy(rem[i]), torch.from_numpy(sol[i])
         idx, digits = _symmetries(rng, B)
+        if self.source == "extreme":  # rem holds the puzzles; the digit map sends 0 (blank) to 0
+            relabel = lambda a: np.take_along_axis(digits, np.take_along_axis(a[i], idx, 1), 1)
+            return torch.from_numpy(relabel(rem)), torch.from_numpy(relabel(sol))
         s = np.take_along_axis(digits, np.take_along_axis(sol[i], idx, 1), 1)
         r = np.take_along_axis(rem[i], idx, 1)
         hi = np.minimum(self.max_blanks, r.sum(1))
