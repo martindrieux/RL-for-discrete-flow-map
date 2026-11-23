@@ -366,3 +366,52 @@ def test_train_state_round_trip_resumes_exactly(tmp_path):
     assert all(torch.equal(a, b) for a, b in zip(want, fm2.net.parameters()))
     assert resumed_title("Flow map, RL, seed 0, 5000 steps", 2500, 5000) == "Flow map, RL, seed 0, steps 2500-5000"
     assert resumed_title("Flow map, RL", 2500, 5000) == "Flow map, RL, from step 2500"
+
+
+def test_pick_groups_puts_mixed_reward_groups_first():
+    """Groups whose rewards are not all equal come first, in the order drawn, then the others."""
+    from rlfm.rl import mixed_groups, pick_groups
+    r = torch.tensor([1., 1, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0])  # 4 groups of 3: equal, mixed, equal, mixed
+    assert mixed_groups(r, 3).tolist() == [False, True, False, True]
+    assert pick_groups(r, 3, 2).tolist() == [1, 3]
+    assert pick_groups(r, 3, 3).tolist() == [1, 3, 0]
+    per_token = torch.tensor([[1., 0], [1, 1], [0, 0], [0, 0]])  # 2 groups of 2: mixed on token 0, equal
+    assert mixed_groups(per_token, 2).tolist() == [True, False]
+
+
+def test_collect_with_draws_keeps_b_groups_mixed_first():
+    """rl.draws = D draws D * B groups and returns B whole groups (each sharing its question), mixed rewards first."""
+    from rlfm.rl import collect, mixed_groups
+    fm = _perturbed_tiny()
+    cfg = RLConfig(K=2, groups=3, group_size=4, draws=4, temp=3.0)
+    reward = lambda y: (y[:, 0] == 3).float()  # depends on one sampled token: some groups mixed, some not
+    ro = collect(fm, None, reward, cfg, 9, 12, "cpu", gen=torch.Generator().manual_seed(0))
+    assert ro.y.shape == (12, 9) and ro.z.shape == (12, 9, 12) and ro.logp_old.shape == (12, 9)
+    assert torch.equal(ro.reward, reward(ro.y))  # rewards stay attached to their answers
+    big = collect(fm, None, reward, RLConfig(K=2, groups=12, group_size=4, temp=3.0), 9, 12, "cpu",
+                  gen=torch.Generator().manual_seed(0))
+    n_mixed = int(mixed_groups(big.reward, 4).sum())
+    m = mixed_groups(ro.reward, 4)
+    assert int(m.sum()) == min(3, n_mixed) and not (~m[:-1] & m[1:]).any()  # all mixed groups found, placed first
+
+
+def test_rule_fraction_reward_needs_no_solution():
+    """r = 1 - (blank cells sharing a digit with a peer) / (blank cells): 1 exactly for the solved grid, lower with
+    conflicts, 0 when malformed or a given digit is changed."""
+    from rlfm.data.sudoku import make_grid
+    from rlfm.rewards import sudoku as R
+    sol, blank = make_grid(0)
+    q = "".join("0" if b else str(d) for d, b in zip(sol, blank))
+    a = "".join(map(str, sol))
+    b = [i for i in range(81) if blank[i]]
+    i, j = next((i, j) for i in b for j in b if i // 9 == j // 9 and sol[i] != sol[j])  # two blanks in one row
+    swapped = list(a); swapped[i], swapped[j] = swapped[j], swapped[i]
+    one_wrong = list(a); one_wrong[i] = str(sol[j])  # duplicates sol[j] in the row of i (j is in that row)
+    given = next(k for k in range(81) if not blank[k])
+    bad_given = list(a); bad_given[given] = str(sol[given] % 9 + 1)
+    r = R.rule_fraction([q + a, q + "".join(swapped), q + "".join(one_wrong), q + "".join(bad_given), q + a[:80]])
+    assert r[0] == 1 and bool(R.correct([q + a])[0])
+    assert 0 < r[1] < 1 and 0 < r[2] < 1 and r[2] >= r[1] - 1e-6  # one wrong cell breaks rules for at least 2 cells
+    assert abs(r[2] - (1 - (1 + sum(1 for k in R.PEERS[i] if blank[k] and a[k] == str(sol[j]))) / len(b))) < 1e-6
+    assert r[3] == 0 and r[4] == 0
+    assert all(len(p) == 20 for p in R.PEERS)

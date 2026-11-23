@@ -14,7 +14,7 @@ import torch
 from rlfm.common import (cond_mode, load_config, load_flowmap, load_train_state, make_task, require_holdout, resumed_title,
                          save_train_state, task_metrics, training_task)
 from rlfm.policy import chain_logits, policy_logits, sample_tokens, stochastic_chain, token_entropy, token_kl
-from rlfm.rl import RLConfig, collect, rl_update, sft_loss
+from rlfm.rl import RLConfig, collect, mixed_groups, rl_update, sft_loss
 from rlfm.tracking import Run
 
 
@@ -99,9 +99,10 @@ def main():
               formula=trk.get("formula"), algo=trk.get("algo"), config=cfg_all, question=trk.get("question"))
 
     # exact: 1 for a correct equation; digits: fraction of correct answer digits;
-    # per_digit: one reward per answer digit (1 if correct), so each digit gets its own advantage
+    # per_digit: one reward per answer digit (1 if correct), so each digit gets its own advantage;
+    # rules (Sudoku): share of blank cells that break no rule, 1 only for the solved grid
     reward_kind = cfg_all.get("reward", "exact")
-    assert reward_kind in ("exact", "digits", "per_digit")
+    assert reward_kind in ("exact", "digits", "per_digit", "rules")
     if reward_kind != "exact" and not conditional:
         raise ValueError(f"reward={reward_kind} needs a conditional model (the true answer comes from the question)")
 
@@ -111,6 +112,8 @@ def main():
         if reward_kind == "per_digit":
             return reward_mod.digit_correct(y, task.true_answer(q))
         full = y if q is None else torch.cat([q, y], 1)
+        if reward_kind == "rules":  # Sudoku: share of blank cells that break no rule (needs no solution)
+            return reward_mod.rule_fraction(task.decode(full.cpu()))
         return reward_mod.reward(task.decode(full.cpu()))
 
     train_task = training_task(task, cfg_all)
@@ -157,7 +160,10 @@ def main():
             ro = collect(fm, ref, reward_fn, rc, L, V, device, question_fn=question_fn)
             diag = rl_update(fm, opt, ro, rc, tr.get("grad_clip", 1.0))
             if step % tr["log_every"] == 0:
-                run.log(step, reward_train=ro.reward.mean().item(), sec=time.time() - t0, **diag)
+                run.log(step, reward_train=ro.reward.mean().item(), sec=time.time() - t0,
+                        mixed_groups=mixed_groups(ro.reward, rc.group_size).float().mean().item(),
+                        solved_train=(ro.reward == 1).float().mean().item() if ro.reward.dim() == 1 else float("nan"),
+                        **diag)
         if step % ev["every"] == 0 or step == tr["steps"]:
             m = do_eval()
             run.log(step, **m)

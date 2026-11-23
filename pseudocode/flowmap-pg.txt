@@ -26,9 +26,11 @@ repeat $\mu$ = `rl.mu` times:
 
 == Conditional version (when the pretrained model has `cond.mode`)
 each group shares one question $c_b$ drawn from the training questions (Sudoku: $b \ge$ `train_min_blanks` blanks if set); $z_g \in \mathbb{R}^{L_a \times V}$ covers the answer
+if $D$ = `rl.draws` $> 1$: draw $DB$ groups, keep $B$: first the groups with $\max_g r_g \ne \min_g r_g$ (in the order drawn), then the others   // a group with equal rewards has $A_g = 0$
 $\log \pi_\theta(y \mid z, c) = \sum_{i=1}^{L_a} \log p_{\theta,i}(y_i \mid z, c)$, $L_a$ answer length
 if `cond.clamp`: $p_{\theta,i} = \mathrm{onehot}(c_i)$ for the clue cells $c_i \ne 0$, so $y_i = c_i$ and $\log p_{\theta,i}(y_i) = 0$: only blank cells are sampled and trained
 $r_g$ by the rule `reward`:
     exact: $r_g = \mathbb{1}[y_g = y^*(c_b)]$   // $y^*(c)$: true answer digits
     digits: $r_g = \frac{1}{L_a}\sum_{i=1}^{L_a} \mathbb{1}[y_{g,i} = y^*_i(c_b)]$
+    rules (Sudoku): $r_g = 1 - \frac{1}{n_b}\sum_{i: c_{b,i} = 0} \mathbb{1}[y_{g,i} \notin \{1, \dots, 9\} \text{ or } \exists j \in P(i): y_{g,j} = y_{g,i}]$   // $P(i)$: the 20 cells sharing a row, column or box with $i$; $n_b$ blank cells; no solution needed; $r_g = 1$ iff solved
     per_digit: $r_{g,i} = \mathbb{1}[y_{g,i} = y^*_i(c_b)]$, one reward per digit; then $A_{g,i}$ = the rule `rl.advantage` applied per digit $i$, e.g. $A_{g,i} = r_{g,i} - \frac{1}{G-1}\sum_{j \ne g} r_{j,i}$, and $A_g \to A_{g,i}$ in $\mathcal{L}_{pg}$

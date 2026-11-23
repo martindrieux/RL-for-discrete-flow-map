@@ -2,6 +2,9 @@
 import torch
 
 from ..data.sudoku import UNITS
+from ..tracking import nb
+
+PEERS = [sorted({j for u in UNITS if i in u for j in u} - {i}) for i in range(81)]  # 20 cells sharing a row, column or box
 
 
 def parse(s: str) -> tuple[str, str] | None:
@@ -34,6 +37,24 @@ def correct(strings: list[str]) -> torch.Tensor:
 def reward(strings: list[str]) -> torch.Tensor:
     """FloatTensor [B]: 1.0 for the solved grid, else 0."""
     return correct(strings).float()
+
+
+@nb.core
+def rule_fraction(strings: list[str]) -> torch.Tensor:
+    """FloatTensor [B]: r = 1 - c / n_b, n_b = blank cells of the puzzle, c = blank cells whose digit is not in 1..9 or
+    equals the digit of one of its 20 peers (same row, column or box). Uses only the rules, not the solution; r = 1 iff
+    the grid is solved. 0 if the string is malformed or a given digit is changed."""
+    out = []
+    for s in strings:
+        p = parse(s)
+        if p is None or not all(x == "0" or x == y for x, y in zip(*p)):
+            out.append(0.0)
+            continue
+        q, a = p
+        blanks = [i for i in range(81) if q[i] == "0"]
+        bad = sum(a[i] not in "123456789" or any(a[j] == a[i] for j in PEERS[i]) for i in blanks)
+        out.append(1.0 - bad / max(len(blanks), 1))
+    return torch.tensor(out)
 
 
 def distinct_correct(strings: list[str]) -> int:

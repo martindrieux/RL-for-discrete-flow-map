@@ -29,6 +29,7 @@ class RLConfig:
     entropy: float = 0.0       # alpha: weight of the entropy bonus -alpha * mean_i H(p_{theta,i}) (all jumps if stochastic)
     micro: int = 1             # the batch is cut in `micro` equal slices whose gradients are summed (same step, less memory)
     zs: float = 1.0            # s: noise scale of the rollouts, z ~ N(0, s^2 I); the best decoding of Sudoku uses s = 0
+    draws: int = 1             # D: each step draws D * B groups and trains on B of them, mixed-reward groups first
 
 
 @dataclass
@@ -51,7 +52,14 @@ def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable, cfg: RLConfig
 
     Conditional: question_fn(B) gives B questions [B, Lq]; each is shared by the G samples of its group,
     L is then the answer length and reward_fn(y, q) scores the answer to the question.
+    cfg.draws = D > 1: D * B groups are drawn and B of them are kept by pick_groups (mixed rewards first).
     """
+    if cfg.draws > 1:
+        big = replace(cfg, groups=cfg.draws * cfg.groups, draws=1)
+        ro = collect(fm, ref, reward_fn, big, L, V, device, gen, question_fn)
+        keep = pick_groups(ro.reward, cfg.group_size, cfg.groups)
+        idx = (keep[:, None] * cfg.group_size + torch.arange(cfg.group_size, device=keep.device)).flatten()
+        return replace(ro, **{f.name: None if getattr(ro, f.name) is None else getattr(ro, f.name)[idx] for f in fields(ro)})
     N = cfg.groups * cfg.group_size
     q = None if question_fn is None else question_fn(cfg.groups).to(device).repeat_interleave(cfg.group_size, 0)
     z = cfg.zs * torch.randn(N, L, V, generator=gen, device=device)
@@ -66,6 +74,22 @@ def collect(fm: FlowMap, ref: FlowMap | None, reward_fn: Callable, cfg: RLConfig
     logits_ref = policy_logits(ref, z, cfg.K, cfg.option, cfg.tau_star, q) if (ref is not None and cfg.beta > 0) else None
     r = reward_fn(y) if q is None else reward_fn(y, q)
     return Rollout(z, y, token_logp(logits, y, cfg.temp), r.to(device).float(), logits_ref, q)
+
+
+@nb.core
+def mixed_groups(reward: torch.Tensor, G: int) -> torch.Tensor:
+    """[M] bool: group m (samples m*G .. m*G+G-1) has rewards that are not all equal (for a per-token reward [N, L]:
+    on at least one token), so its advantages are not all zero."""
+    r = reward.view(-1, G, *reward.shape[1:]).flatten(2) if reward.dim() > 1 else reward.view(-1, G, 1)
+    return (r.amax(1) != r.amin(1)).any(-1)
+
+
+@nb.core
+def pick_groups(reward: torch.Tensor, G: int, B: int) -> torch.Tensor:
+    """Indices of B of the M groups of reward [M * G]: the groups with mixed rewards first, in the order drawn,
+    then the others in the order drawn."""
+    order = torch.argsort((~mixed_groups(reward, G)).to(torch.int8), stable=True)
+    return order[:B]
 
 
 @nb.core
